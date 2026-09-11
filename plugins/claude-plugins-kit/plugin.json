@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "claude-plugins-kit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Expose installed Claude Code skills to Codex through safe forwarding plugins.",
   "author": {
     "name": "kitaekatt",

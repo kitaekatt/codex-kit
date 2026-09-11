@@ -376,6 +376,465 @@ def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) 
     )
 
 
+def test_source_migrate_replaces_exact_legacy_bridge_with_native_plugins(
+    tmp_path: Path,
+) -> None:
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".git").mkdir()
+    plugin_root = tmp_path / "claude-cache" / "awesome-kit" / "1.0.0"
+    write_skill(plugin_root, "orchestrate", "Synthetic orchestration description.")
+    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
+    personal_skills = tmp_path / "claude" / "skills"
+    write_registry(registry, plugin_root)
+    env = isolated_environment(tmp_path, registry, personal_skills)
+    codex_home = Path(env["CODEX_HOME"])
+
+    legacy_skill = codex_home / "skills" / "plugins-kit-awesome-kit-orchestrate" / "SKILL.md"
+    legacy_skill.parent.mkdir(parents=True)
+    legacy_skill.write_text(
+        "---\nname: plugins-kit-awesome-kit-orchestrate\n"
+        "description: Legacy forwarding stub.\nmetadata:\n"
+        "  plugins-kit-stub: '1'\n"
+        "  generator: plugins-kit/sync_plugins_kit.py\n"
+        "  source-kind: plugin\n"
+        "  source-identity: awesome-kit@plugins-kit/orchestrate\n"
+        "  status: adapted\n---\n\nLegacy forwarding body.\n",
+        encoding="utf-8",
+    )
+    legacy_state = codex_home / ".plugins-kit-sync-state.json"
+    legacy_state.write_text(
+        json.dumps(
+            {
+                "claude_head": "1" * 40,
+                "content": "2" * 64,
+                "registry": "3" * 64,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    legacy_handler = {
+        "type": "command",
+        "command": f'{sys.executable} {codex_home / "scripts" / "startup_hook.py"}',
+        "statusMessage": "Synchronizing shared skills",
+        "timeout": 30,
+    }
+    foreign_handler = {
+        "type": "command",
+        "command": "foreign-session-start-command",
+        "statusMessage": "Preserve this hook",
+        "timeout": 7,
+    }
+    hooks_path = codex_home / "hooks.json"
+    hooks_document = {
+        "foreignTopLevel": {"preserve": True},
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "^(startup|resume)$",
+                    "hooks": [legacy_handler, foreign_handler],
+                }
+            ],
+            "Notification": [
+                {"matcher": "*", "hooks": [{"type": "command", "command": "notify"}]}
+            ],
+        },
+    }
+    hooks_path.write_text(json.dumps(hooks_document, indent=2) + "\n", encoding="utf-8")
+    assert not (codex_home / "scripts" / "startup_hook.py").exists()
+
+    marketplace = json_command(
+        [CODEX or "codex", "plugin", "marketplace", "add", str(REPOSITORY), "--json"],
+        env,
+        cwd,
+    )
+    assert marketplace["marketplaceName"] == "codex-kit"
+
+    foreign_skill = write_skill(
+        codex_home, "foreign-skill", "Unrelated local skill must survive migration."
+    )
+    foreign_skill_before = foreign_skill.read_text(encoding="utf-8")
+    source_launcher = launcher_command(REPOSITORY / "plugins" / "claude-plugins-kit")
+
+    preview = json_command([*source_launcher, "migrate"], env, cwd, timeout=60.0)
+    assert preview["status"] == "changed", preview
+    assert preview["changed"] is False
+    assert preview["migration_needed"] is True
+    assert preview["phase"] == "inventory"
+    assert preview["backup"] is None
+    assert legacy_skill.is_file() and legacy_state.is_file()
+    assert foreign_skill.read_text(encoding="utf-8") == foreign_skill_before
+    assert json.loads(hooks_path.read_text(encoding="utf-8")) == hooks_document
+    preview_plugins = json_command(
+        [CODEX or "codex", "plugin", "list", "--json"], env, cwd
+    )["installed"]
+    assert not any(
+        isinstance(record, dict)
+        and record.get("pluginId") == "claude-plugins-kit@codex-kit"
+        for record in preview_plugins
+    )
+
+    migrated = json_command(
+        [*source_launcher, "migrate", "--install"], env, cwd, timeout=120.0
+    )
+    assert migrated["status"] == "changed", migrated
+    assert migrated["changed"] is True
+    assert migrated["phase"] == "complete"
+    assert migrated["migration_needed"] is False
+    assert migrated["restart_required"] is True
+    backup = Path(str(migrated["backup"]))
+    assert backup.is_dir()
+    assert (backup / "journal.json").is_file()
+
+    assert not legacy_skill.parent.exists()
+    assert not legacy_state.exists()
+    assert json.loads(hooks_path.read_text(encoding="utf-8")) == {
+        "foreignTopLevel": {"preserve": True},
+        "hooks": {
+            "SessionStart": [
+                {"matcher": "^(startup|resume)$", "hooks": [foreign_handler]}
+            ],
+            "Notification": hooks_document["hooks"]["Notification"],
+        },
+    }
+    system_skill = codex_home / "skills" / ".system" / "imagegen" / "SKILL.md"
+    assert system_skill.is_file()
+    system_skill_before = system_skill.read_bytes()
+    assert foreign_skill.read_text(encoding="utf-8") == foreign_skill_before
+
+    installed_plugins = json_command(
+        [CODEX or "codex", "plugin", "list", "--json"], env, cwd
+    )["installed"]
+    native_bridge = [
+        record
+        for record in installed_plugins
+        if isinstance(record, dict)
+        and record.get("pluginId") == "claude-plugins-kit@codex-kit"
+    ]
+    assert len(native_bridge) == 1, native_bridge
+    assert native_bridge[0]["installed"] is True
+    assert native_bridge[0]["enabled"] is True
+    installed_path = Path(str(migrated["native"]["installed_path"]))
+    assert installed_path.is_relative_to(codex_home / "plugins" / "cache")
+
+    catalog = skills_by_name(app_server_skills(env, cwd))
+    assert catalog["claude-plugins-kit:claude-plugins"]["pluginId"] == (
+        "claude-plugins-kit@codex-kit"
+    )
+    assert catalog["awesome-kit:orchestrate"]["pluginId"] == (
+        f"awesome-kit@{GENERATED_MARKETPLACE}"
+    )
+    assert "plugins-kit-awesome-kit-orchestrate" not in catalog
+
+    rerun = json_command(
+        [*source_launcher, "migrate", "--install"], env, cwd, timeout=120.0
+    )
+    assert rerun["status"] == "unchanged", rerun
+    assert rerun["changed"] is False
+    assert rerun["migration_needed"] is False
+    assert rerun["phase"] == "complete"
+    assert rerun["backup"] is None
+    assert system_skill.read_bytes() == system_skill_before
+
+def test_source_migrate_retries_after_native_install_when_sync_initially_fails(
+    tmp_path: Path,
+) -> None:
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".git").mkdir()
+    plugin_root = tmp_path / "claude-cache" / "awesome-kit" / "1.0.0"
+    write_skill(plugin_root, "orchestrate", "Retry orchestration description.")
+    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text("{malformed", encoding="utf-8")
+    personal_skills = tmp_path / "claude" / "skills"
+    env = isolated_environment(tmp_path, registry, personal_skills)
+    codex_home = Path(env["CODEX_HOME"])
+
+    marketplace = json_command(
+        [CODEX or "codex", "plugin", "marketplace", "add", str(REPOSITORY), "--json"],
+        env,
+        cwd,
+    )
+    assert marketplace["marketplaceName"] == "codex-kit"
+
+    legacy_skill = codex_home / "skills" / "plugins-kit-awesome-kit-orchestrate" / "SKILL.md"
+    legacy_skill.parent.mkdir(parents=True)
+    legacy_skill.write_text(
+        "---\nname: plugins-kit-awesome-kit-orchestrate\n"
+        "description: Legacy forwarding stub.\nmetadata:\n"
+        "  plugins-kit-stub: '1'\n"
+        "  generator: plugins-kit/sync_plugins_kit.py\n"
+        "  source-kind: plugin\n"
+        "  source-identity: awesome-kit@plugins-kit/orchestrate\n"
+        "  status: adapted\n---\n\nLegacy forwarding body.\n",
+        encoding="utf-8",
+    )
+    legacy_state = codex_home / ".plugins-kit-sync-state.json"
+    legacy_state.write_text(
+        json.dumps(
+            {
+                "claude_head": None,
+                "content": "4" * 64,
+                "registry": "5" * 64,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    foreign_handler = {
+        "type": "command",
+        "command": "foreign-session-start-command",
+        "statusMessage": "Preserve this hook",
+        "timeout": 7,
+    }
+    hooks_path = codex_home / "hooks.json"
+    legacy_handler = {
+        "type": "command",
+        "command": f'{sys.executable} {codex_home / "scripts" / "startup_hook.py"}',
+        "statusMessage": "Synchronizing shared skills",
+        "timeout": 30,
+    }
+    hooks_document = {
+        "foreignTopLevel": {"preserve": True},
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "^(startup|resume)$",
+                    "hooks": [legacy_handler, foreign_handler],
+                }
+            ],
+            "Notification": [
+                {"matcher": "*", "hooks": [{"type": "command", "command": "notify"}]}
+            ],
+        },
+    }
+    hooks_path.write_text(json.dumps(hooks_document, indent=2) + "\n", encoding="utf-8")
+    foreign_skill = write_skill(
+        codex_home, "foreign-skill", "Unrelated local skill must survive retry."
+    )
+    foreign_skill_before = foreign_skill.read_bytes()
+    legacy_before = {
+        path: path.read_bytes() for path in (legacy_skill, legacy_state, hooks_path)
+    }
+    source_launcher = launcher_command(REPOSITORY / "plugins" / "claude-plugins-kit")
+
+    failed_process = subprocess.run(
+        [*source_launcher, "migrate", "--install"],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=120.0,
+        shell=False,
+    )
+    assert failed_process.returncode == 2, failed_process
+    failed = json.loads(failed_process.stdout)
+    assert failed["status"] == "error", failed
+    assert failed["changed"] is False
+    assert failed["phase"] == "sync"
+    assert failed["migration_needed"] is True
+    backup = Path(str(failed["backup"]))
+    assert backup.is_dir()
+    assert (backup / "journal.json").is_file()
+    assert all(path.read_bytes() == content for path, content in legacy_before.items())
+    assert foreign_skill.read_bytes() == foreign_skill_before
+
+    installed_plugins = json_command(
+        [CODEX or "codex", "plugin", "list", "--json"], env, cwd
+    )["installed"]
+    native_bridge = [
+        record
+        for record in installed_plugins
+        if isinstance(record, dict)
+        and record.get("pluginId") == "claude-plugins-kit@codex-kit"
+    ]
+    assert len(native_bridge) == 1, native_bridge
+    assert native_bridge[0]["installed"] is True
+    assert native_bridge[0]["enabled"] is True
+
+    write_registry(registry, plugin_root)
+    retried = json_command(
+        [*source_launcher, "migrate", "--install"], env, cwd, timeout=120.0
+    )
+    assert retried["status"] == "changed", retried
+    assert retried["changed"] is True
+    assert retried["phase"] == "complete"
+    assert retried["migration_needed"] is False
+    assert Path(str(retried["backup"])) == backup
+    assert not legacy_skill.parent.exists()
+    assert not legacy_state.exists()
+    assert json.loads(hooks_path.read_text(encoding="utf-8")) == {
+        "foreignTopLevel": {"preserve": True},
+        "hooks": {
+            "SessionStart": [
+                {"matcher": "^(startup|resume)$", "hooks": [foreign_handler]}
+            ],
+            "Notification": hooks_document["hooks"]["Notification"],
+        },
+    }
+    assert foreign_skill.read_bytes() == foreign_skill_before
+
+    catalog = skills_by_name(app_server_skills(env, cwd))
+    assert catalog["claude-plugins-kit:claude-plugins"]["pluginId"] == (
+        "claude-plugins-kit@codex-kit"
+    )
+    assert catalog["awesome-kit:orchestrate"]["pluginId"] == (
+        f"awesome-kit@{GENERATED_MARKETPLACE}"
+    )
+    assert "plugins-kit-awesome-kit-orchestrate" not in catalog
+
+
+def test_source_migrate_supports_symlinked_codex_home_alias(tmp_path: Path) -> None:
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".git").mkdir()
+    plugin_root = tmp_path / "claude-cache" / "awesome-kit" / "1.0.0"
+    write_skill(plugin_root, "orchestrate", "Symlink-layout orchestration description.")
+    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
+    personal_skills = tmp_path / "claude" / "skills"
+    write_registry(registry, plugin_root)
+    env = isolated_environment(tmp_path, registry, personal_skills)
+
+    real_codex_home = Path(env["CODEX_HOME"])
+    codex_home_alias = Path(env["HOME"]) / ".codex"
+    try:
+        codex_home_alias.symlink_to(real_codex_home, target_is_directory=True)
+    except OSError:
+        if os.name == "nt":
+            pytest.skip("creating a directory symlink requires unavailable Windows privileges")
+        raise
+    env["CODEX_HOME"] = str(codex_home_alias)
+    assert codex_home_alias.is_symlink()
+    assert codex_home_alias.resolve() == real_codex_home.resolve()
+
+    marketplace = json_command(
+        [CODEX or "codex", "plugin", "marketplace", "add", str(REPOSITORY), "--json"],
+        env,
+        cwd,
+    )
+    assert marketplace["marketplaceName"] == "codex-kit"
+    assert codex_home_alias.is_symlink()
+
+    legacy_skill = (
+        codex_home_alias
+        / "skills"
+        / "plugins-kit-awesome-kit-orchestrate"
+        / "SKILL.md"
+    )
+    legacy_skill.parent.mkdir(parents=True)
+    legacy_skill.write_text(
+        "---\nname: plugins-kit-awesome-kit-orchestrate\n"
+        "description: Legacy forwarding stub.\nmetadata:\n"
+        "  plugins-kit-stub: '1'\n"
+        "  generator: plugins-kit/sync_plugins_kit.py\n"
+        "  source-kind: plugin\n"
+        "  source-identity: awesome-kit@plugins-kit/orchestrate\n"
+        "  status: adapted\n---\n\nLegacy forwarding body.\n",
+        encoding="utf-8",
+    )
+    legacy_state = codex_home_alias / ".plugins-kit-sync-state.json"
+    legacy_state.write_text(
+        json.dumps(
+            {
+                "claude_head": "6" * 40,
+                "content": "7" * 64,
+                "registry": "8" * 64,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    foreign_handler = {
+        "type": "command",
+        "command": "foreign-session-start-command",
+        "statusMessage": "Preserve this hook",
+        "timeout": 7,
+    }
+    hooks_path = codex_home_alias / "hooks.json"
+    hooks_document = {
+        "foreignTopLevel": {"preserve": True},
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "^(startup|resume)$",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": (
+                                f'{sys.executable} '
+                                f'{codex_home_alias / "scripts" / "startup_hook.py"}'
+                            ),
+                            "statusMessage": "Synchronizing shared skills",
+                            "timeout": 30,
+                        },
+                        foreign_handler,
+                    ],
+                }
+            ]
+        },
+    }
+    hooks_path.write_text(json.dumps(hooks_document, indent=2) + "\n", encoding="utf-8")
+    foreign_skill = write_skill(
+        codex_home_alias, "foreign-skill", "Unrelated alias-layout skill."
+    )
+    foreign_skill_before = foreign_skill.read_bytes()
+
+    source_launcher = launcher_command(REPOSITORY / "plugins" / "claude-plugins-kit")
+    migrated = json_command(
+        [*source_launcher, "migrate", "--install"], env, cwd, timeout=120.0
+    )
+    assert migrated["status"] == "changed", migrated
+    assert migrated["changed"] is True
+    assert migrated["phase"] == "complete"
+    assert migrated["migration_needed"] is False
+    backup = Path(str(migrated["backup"]))
+    assert (backup / "journal.json").is_file()
+    assert str(codex_home_alias / "scripts" / "startup_hook.py") in (
+        backup / "codex-home" / "hooks.json"
+    ).read_text(encoding="utf-8")
+
+    assert codex_home_alias.is_symlink()
+    assert codex_home_alias.resolve() == real_codex_home.resolve()
+    assert not legacy_skill.parent.exists()
+    assert not legacy_state.exists()
+    assert json.loads(hooks_path.read_text(encoding="utf-8")) == {
+        "foreignTopLevel": {"preserve": True},
+        "hooks": {
+            "SessionStart": [
+                {"matcher": "^(startup|resume)$", "hooks": [foreign_handler]}
+            ]
+        },
+    }
+    assert foreign_skill.read_bytes() == foreign_skill_before
+
+    installed_plugins = json_command(
+        [CODEX or "codex", "plugin", "list", "--json"], env, cwd
+    )["installed"]
+    native_bridge = [
+        record
+        for record in installed_plugins
+        if isinstance(record, dict)
+        and record.get("pluginId") == "claude-plugins-kit@codex-kit"
+    ]
+    assert len(native_bridge) == 1, native_bridge
+    assert native_bridge[0]["installed"] is True
+    assert native_bridge[0]["enabled"] is True
+    installed_path = Path(str(migrated["native"]["installed_path"])).resolve()
+    assert installed_path.is_relative_to(real_codex_home.resolve() / "plugins" / "cache")
+
+    catalog = skills_by_name(app_server_skills(env, cwd))
+    assert catalog["claude-plugins-kit:claude-plugins"]["pluginId"] == (
+        "claude-plugins-kit@codex-kit"
+    )
+    assert catalog["awesome-kit:orchestrate"]["pluginId"] == (
+        f"awesome-kit@{GENERATED_MARKETPLACE}"
+    )
+    assert "plugins-kit-awesome-kit-orchestrate" not in catalog
+    assert codex_home_alias.is_symlink()
+
+
 @pytest.mark.xfail(
     CODEX_VERSION == "0.154.0",
     reason="Codex CLI 0.154.0 does not expose bundled plugin hooks",

@@ -25,6 +25,50 @@ plugins/claude-plugins-kit/scripts/launch.sh sync --install
 
 From an installed copy, invoke the `claude-plugins-kit:claude-plugins` gateway skill. Ask the skill to refresh the bridge. The gateway locates its installed plugin root before it runs the command. A successful change uses native `codex plugin add` or `codex plugin remove`. Restart Codex after a change.
 
+## Migrate a standalone bridge
+
+Use the source checkout when an older bridge installed hooks, discovery stubs,
+or state directly in `CODEX_HOME`. The source launcher works before Codex can
+discover the native gateway.
+
+Preview the migration on macOS or Linux:
+
+```sh
+plugins/claude-plugins-kit/scripts/launch.sh migrate
+```
+
+Apply it after you review the preview:
+
+```sh
+plugins/claude-plugins-kit/scripts/launch.sh migrate --install
+```
+
+On Windows PowerShell, run the checkout launcher through `DEVROOT`:
+
+```powershell
+& (Join-Path $env:DEVROOT 'codex-kit\plugins\claude-plugins-kit\scripts\launch.cmd') migrate --install
+```
+
+The apply operation first writes a backup and journal. It then registers the
+native marketplace when necessary. It installs the authored plugin and
+continues through its installed launcher. It verifies the native catalog before
+it removes exact-owned old artifacts. For an eligible replacement, it verifies
+the native plugin before it removes the old stub. Reported retired and collision
+identities are not eligible replacements. Cleanup handles them by their reported
+dispositions. Native plugins win collisions.
+
+The migration stores the backup and journal in `migration-backups/` under the
+data root. This directory is outside Git worktrees and the generated
+marketplace. An interrupted operation is safe to run again. Its JSON result
+reports the `phase` and `backup` path. A foreign edit stops cleanup and
+remains unchanged. The migration resolves a `CODEX_HOME` symlink to its target.
+
+The migration removes an exact-owned legacy hook after native verification. It
+does not install a new automatic user hook or change bootstrap behavior. It
+does not merge a portable configuration manifest. Pulling a settings
+repository can remove tracked old code, but it cannot install native payloads
+or clean ignored artifacts. Use the migration instead of manual deletion.
+
 ## Discovery and local data
 
 Claude source discovery uses:

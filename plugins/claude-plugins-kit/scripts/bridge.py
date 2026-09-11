@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -1138,12 +1139,53 @@ def print_sync_result(result: Mapping[str, Any], startup: bool) -> None:
         print(json.dumps(result, indent=2, sort_keys=True))
 
 
+def _migration_module() -> Any:
+    path = Path(__file__).resolve().with_name("migration.py")
+    spec = importlib.util.spec_from_file_location("codex_kit_native_migration", path)
+    if spec is None or spec.loader is None:
+        raise BridgeError(f"cannot load migration module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+    return module
+
+
+def migrate(
+    *,
+    env: Mapping[str, str],
+    runner: Runner,
+    script: Path | None = None,
+    install: bool = False,
+    sync_launcher: Any = None,
+    discoverer: Any = None,
+    fault: Any = None,
+) -> dict[str, Any]:
+    """Preview or apply migration from the retired standalone bridge."""
+    bridge_root = (script or Path(__file__)).resolve().parents[1]
+    return _migration_module().migrate(
+        env=env,
+        runner=runner,
+        bridge_root=bridge_root,
+        install=install,
+        sync_launcher=sync_launcher,
+        discoverer=discoverer,
+        fault=fault,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     sync_parser = subparsers.add_parser("sync")
     sync_parser.add_argument("--install", action="store_true")
     sync_parser.add_argument("--startup", action="store_true")
+    migrate_parser = subparsers.add_parser("migrate")
+    migrate_parser.add_argument("--install", action="store_true")
     info_parser = subparsers.add_parser("info")
     info_parser.add_argument("plugin")
     personal_parser = subparsers.add_parser("personal-info")
@@ -1165,6 +1207,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 parser.error("unrecognized sync arguments: " + " ".join(passthrough))
             result = sync(env=env, runner=runner, install=arguments.install)
             print_sync_result(result, arguments.startup)
+            return 2 if result["status"] == "error" else 0
+        if arguments.command == "migrate":
+            if passthrough:
+                parser.error("unrecognized migrate arguments: " + " ".join(passthrough))
+            result = migrate(env=env, runner=runner, install=arguments.install)
+            print(json.dumps(result, indent=2, sort_keys=True))
             return 2 if result["status"] == "error" else 0
         if arguments.command == "info":
             if passthrough:

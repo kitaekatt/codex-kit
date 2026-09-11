@@ -13,6 +13,57 @@ The generated marketplace is `claude-plugins-kit-generated`. Synchronization use
 
 Resolve `<launcher>` with the [runtime contract](runtime.md). Then run `<launcher> sync --install` to refresh. Start a new Codex thread when it reports a catalog change. The command reports one of three states: current, changed and restart required, or error.
 
+## Migrate an old standalone bridge
+
+Run `<launcher> migrate` to preview a migration. Run `<launcher> migrate --install`
+to apply it. These commands have the same contract for source and installed
+launchers.
+
+Use a cloned `codex-kit` checkout when the gateway is not yet discoverable:
+
+```sh
+plugins/claude-plugins-kit/scripts/launch.sh migrate
+plugins/claude-plugins-kit/scripts/launch.sh migrate --install
+```
+
+On Windows PowerShell, apply the migration with:
+
+```powershell
+& (Join-Path $env:DEVROOT 'codex-kit\plugins\claude-plugins-kit\scripts\launch.cmd') migrate --install
+```
+
+The apply operation completes these phases in order:
+
+1. Write a snapshot backup and migration journal.
+2. Register the native `codex-kit` marketplace when it is missing.
+3. Install the authored native plugin.
+4. Continue synchronization through the installed launcher.
+5. Verify the native catalog and all eligible native replacements.
+6. Remove only exact-owned old hooks, stubs, and state.
+
+An installed native plugin wins a name collision. The migration does not
+replace that plugin. It reports the collision identity and retires the old
+wrapper identity. For an eligible replacement, the old stub remains until the
+native replacement is verified. Reported retired and collision identities are
+not eligible replacements. Cleanup removes their exact-owned old stubs under
+their reported dispositions.
+
+The migration resolves the live `CODEX_HOME`. If that path is a symlink, it
+uses the target. Before native installation, it writes a backup and a journal to
+`migration-backups/` under the data root. This location is outside Git and the
+generated marketplace. If an operation stops, run the same command again. The
+JSON result reports the `phase` and `backup` path.
+
+Only exact bridge-owned artifacts are eligible for cleanup. A foreign edit
+stops the migration. The migration preserves that artifact and reports the
+conflict. Do not remove old files by hand.
+
+The migration removes an exact-owned legacy hook after native verification. It
+does not install a new automatic user hook or change bootstrap behavior. It
+does not merge a portable configuration manifest. Pulling a settings
+repository removes tracked old code only. A pull cannot install native payloads
+or remove ignored runtime artifacts.
+
 Codex 0.154.0 does not load bundled plugin hooks. Use manual gateway synchronization on that version. The package includes a SessionStart hook for forward compatibility. On a runtime that supports bundled hooks, review and trust the hook before use. The hook then runs synchronization on startup and resume.
 
 Only plugins with bridge ownership markers and matching state records can change. Missing or malformed sources and ownership records cause an error. The bridge leaves existing wrappers in place after these errors. To do a full cleanup, run `<launcher> uninstall` before you remove the bridge. Removing this authored plugin does not remove Claude plugins.
