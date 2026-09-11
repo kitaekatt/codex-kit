@@ -835,11 +835,6 @@ def test_source_migrate_supports_symlinked_codex_home_alias(tmp_path: Path) -> N
     assert codex_home_alias.is_symlink()
 
 
-@pytest.mark.xfail(
-    CODEX_VERSION == "0.154.0",
-    reason="Codex CLI 0.154.0 does not expose bundled plugin hooks",
-    strict=True,
-)
 def test_installed_bridge_exposes_bundled_session_start_hook(tmp_path: Path) -> None:
     cwd = tmp_path / "cwd"
     cwd.mkdir()

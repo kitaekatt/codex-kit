@@ -747,7 +747,8 @@ def run_plain(runner: Runner, arguments: Sequence[str], label: str) -> None:
 
 
 def sync(
-    *, env: Mapping[str, str], runner: Runner, script: Path | None = None, install: bool = False
+    *, env: Mapping[str, str], runner: Runner, script: Path | None = None,
+    install: bool = False, respect_disabled: bool = False
 ) -> dict[str, Any]:
     paths = paths_for(env, script)
     with FileLock(paths.lock_file):
@@ -803,7 +804,13 @@ def sync(
                 )
             )
             skipped = sorted(set(duplicates) | set(native_collisions))
-            desired_sources = [source for source in sources if source.name not in skipped]
+            disabled = {
+                source.name for source in sources
+                if respect_disabled and source.name in owned_installed
+                and any(record.get("enabled") is False for record in installed_by_name[source.name])
+                and source.name not in skipped
+            }
+            desired_sources = [source for source in sources if source.name not in skipped and source.name not in disabled]
             rendered: dict[str, tuple[dict[str, str], str, PluginSource]] = {}
             for source in desired_sources:
                 files, digest = rendered_plugin(source, overrides)
@@ -812,7 +819,7 @@ def sync(
             existing_owned = {
                 name for name in state["plugins"] if owned_by_state(paths, state, name)
             }
-            desired_names = set(rendered)
+            desired_names = set(rendered) | disabled
             removals = sorted(existing_owned - desired_names)
             source_changes = sorted(
                 name
@@ -865,7 +872,7 @@ def sync(
                     "installed_digest": previous.get("installed_digest") or previous.get("digest"),
                 }
                 atomic_write(paths.state_file, json.dumps(next_state, indent=2, sort_keys=True) + "\n")
-            for name in sorted(desired_names - set(source_changes)):
+            for name in sorted(set(rendered) - set(source_changes)):
                 _, digest, source = rendered[name]
                 previous = next_state["plugins"].get(name, {})
                 next_state["plugins"][name] = {
@@ -898,7 +905,7 @@ def sync(
                     "source_digest": digest,
                     "installed_digest": digest,
                 }
-            for name in sorted(desired_names - set(install_changes)):
+            for name in sorted(set(rendered) - set(install_changes)):
                 _, digest, source = rendered[name]
                 next_state["plugins"][name] = {
                     "source_identity": source.identity,
@@ -930,6 +937,8 @@ def sync(
             )
             if skipped:
                 message += " Skipped collisions: " + ", ".join(skipped) + "."
+            if disabled:
+                message += " Left disabled plugins unchanged: " + ", ".join(sorted(disabled)) + "."
             return {
                 "status": "changed" if changed else "unchanged",
                 "changed": changed,
@@ -938,6 +947,7 @@ def sync(
                 "creates_or_updates": len(source_changes),
                 "removes": len(removals),
                 "skipped": skipped,
+                "disabled": sorted(disabled),
             }
         except (BridgeError, OSError, UnicodeError) as exc:
             return {
@@ -1155,6 +1165,24 @@ def _migration_module() -> Any:
     return module
 
 
+def maintain(*, env: Mapping[str, str], runner: Runner, script: Path | None = None,
+             check_updates: bool = False) -> dict[str, Any]:
+    """Converge the installed consumer plugin without a fleet bootstrap dependency."""
+    path = Path(__file__).resolve().with_name("maintenance.py")
+    spec = importlib.util.spec_from_file_location("codex_kit_maintenance", path)
+    if spec is None or spec.loader is None:
+        raise BridgeError(f"cannot load maintenance module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+    return module.maintain(bridge=sys.modules[__name__], env=env, runner=runner,
+                           script=script, check_updates=check_updates)
+
+
 def migrate(
     *,
     env: Mapping[str, str],
@@ -1184,6 +1212,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     sync_parser = subparsers.add_parser("sync")
     sync_parser.add_argument("--install", action="store_true")
     sync_parser.add_argument("--startup", action="store_true")
+    sync_parser.add_argument("--respect-disabled", action="store_true")
+    maintenance_parser = subparsers.add_parser("maintain")
+    maintenance_parser.add_argument("--startup", action="store_true")
+    maintenance_parser.add_argument("--check-updates", action="store_true")
     migrate_parser = subparsers.add_parser("migrate")
     migrate_parser.add_argument("--install", action="store_true")
     info_parser = subparsers.add_parser("info")
@@ -1205,7 +1237,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "sync":
             if passthrough:
                 parser.error("unrecognized sync arguments: " + " ".join(passthrough))
-            result = sync(env=env, runner=runner, install=arguments.install)
+            result = sync(env=env, runner=runner, install=arguments.install,
+                          respect_disabled=arguments.respect_disabled)
+            print_sync_result(result, arguments.startup)
+            return 2 if result["status"] == "error" else 0
+        if arguments.command == "maintain":
+            if passthrough:
+                parser.error("unrecognized maintain arguments: " + " ".join(passthrough))
+            result = maintain(env=env, runner=runner, check_updates=arguments.check_updates)
             print_sync_result(result, arguments.startup)
             return 2 if result["status"] == "error" else 0
         if arguments.command == "migrate":

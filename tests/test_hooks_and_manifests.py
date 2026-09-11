@@ -17,11 +17,11 @@ def test_hook_runs_installing_sync_cross_platform():
 def test_authored_manifests_and_marketplace_names_match():
     root = Path(__file__).parents[1]
     plugin = root / "plugins" / "claude-plugins-kit"
-    portable = json.loads((plugin / "plugin.json").read_text())
     compatibility = json.loads((plugin / ".codex-plugin" / "plugin.json").read_text())
     marketplace = json.loads((root / ".agents" / "plugins" / "marketplace.json").read_text())
-    assert portable["name"] == compatibility["name"] == marketplace["plugins"][0]["name"] == "claude-plugins-kit"
-    assert portable["extensions"]["com.openai"]["hooks"] == "./hooks/hooks.json"
+    assert compatibility["name"] == marketplace["plugins"][0]["name"] == "claude-plugins-kit"
+    # A root agent-plugin manifest shadows .codex-plugin and disables hooks in 0.154.
+    assert not (plugin / "plugin.json").exists()
 
 
 def test_startup_output_has_native_session_start_shape(bridge, capsys):

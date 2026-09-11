@@ -602,14 +602,12 @@ def _read_manifest(path: Path, label: str) -> dict[str, Any]:
 
 
 def _source_contract(bridge_root: Path) -> tuple[str, Path]:
-    portable = _read_manifest(bridge_root / "plugin.json", "authored plugin manifest")
     compatibility = _read_manifest(
         bridge_root / ".codex-plugin" / "plugin.json", "authored compatibility manifest"
     )
-    version = portable.get("version")
+    version = compatibility.get("version")
     if (
-        portable.get("name") != AUTHORED_NAME
-        or compatibility.get("name") != AUTHORED_NAME
+        compatibility.get("name") != AUTHORED_NAME
         or not isinstance(version, str)
         or compatibility.get("version") != version
     ):
@@ -623,14 +621,11 @@ def _source_contract(bridge_root: Path) -> tuple[str, Path]:
 def _verify_installed_root(path: Path, codex_home: Path, expected_version: str) -> Path:
     cache = codex_home / "plugins" / "cache"
     root = _safe_descendant(path, cache, "installedPath")
-    portable = _read_manifest(root / "plugin.json", "installed authored plugin manifest")
     compatibility = _read_manifest(
         root / ".codex-plugin" / "plugin.json", "installed authored compatibility manifest"
     )
     if (
-        portable.get("name") != AUTHORED_NAME
-        or compatibility.get("name") != AUTHORED_NAME
-        or portable.get("version") != expected_version
+        compatibility.get("name") != AUTHORED_NAME
         or compatibility.get("version") != expected_version
     ):
         raise MigrationError(
