@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$PLUGIN_ROOT/scripts/launch.sh\" sync --install --startup",
+            "commandWindows": "\"%PLUGIN_ROOT%\\scripts\\launch.cmd\" sync --install --startup",
+            "statusMessage": "Refreshing Claude skill plugins",
+            "timeout": 60,
+            "additionalContextLimit": 1000
+          }
+        ]
+      }
+    ]
+  }
+}

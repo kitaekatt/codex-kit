@@ -1,0 +1,20 @@
+{
+  "name": "codex-kit",
+  "interface": {
+    "displayName": "Codex Kit"
+  },
+  "plugins": [
+    {
+      "name": "claude-plugins-kit",
+      "source": {
+        "source": "local",
+        "path": "./plugins/claude-plugins-kit"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

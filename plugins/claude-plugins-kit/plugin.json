@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "claude-plugins-kit",
+  "version": "0.1.0",
+  "description": "Expose installed Claude Code skills to Codex through safe forwarding plugins.",
+  "author": {
+    "name": "kitaekatt",
+    "url": "https://github.com/kitaekatt"
+  },
+  "homepage": "https://github.com/kitaekatt/codex-kit",
+  "repository": "https://github.com/kitaekatt/codex-kit",
+  "license": "MIT",
+  "keywords": ["claude", "codex", "skills", "bridge"],
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Claude Plugins Kit",
+        "shortDescription": "Use installed Claude skills in Codex.",
+        "longDescription": "Generates native Codex forwarding plugins for user-installed Claude Code plugins and personal skills without copying their instructions.",
+        "developerName": "kitaekatt",
+        "category": "Developer Tools",
+        "capabilities": ["Read", "Local automation"],
+        "defaultPrompt": [
+          "Refresh my Claude skill bridge.",
+          "Diagnose a missing forwarded Claude skill."
+        ]
+      }
+    }
+  }
+}

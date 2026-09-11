@@ -1,0 +1,282 @@
+{
+  "prototyping@spryfox-plugins/debug": {
+    "status": "adapted",
+    "instructions": "Preserve the installed skill's root-cause-first procedure and evidence requirements. Use available Codex tools for its Claude tool calls; do not invent a missing swarm or native Workflow runtime."
+  },
+  "awesome-kit@plugins-kit/debug-context": {
+    "status": "adapted",
+    "instructions": "Use Codex delegation when available; preserve established/hypothesis labels and answer-first behavior."
+  },
+  "awesome-kit@plugins-kit/orchestrate": {
+    "status": "adapted",
+    "instructions": "Use the installed plugin runtime and Codex delegation/CLI. Read references/codex-dispatch.md; translate Agent, SendMessage, and Workflow calls rather than claiming Claude tools exist."
+  },
+  "awesome-kit@plugins-kit/plugin-ecosystem": {
+    "status": "adapted",
+    "instructions": "This displays the installed Claude plugin inventory, not the Codex skill catalog. It is usable when the user wants to inspect the Claude ecosystem; describe that scope explicitly."
+  },
+  "awesome-kit@plugins-kit/recap": {
+    "status": "adapted",
+    "instructions": "Use Codex user input for the optional interview and preserve the two-phase text-first contract."
+  },
+  "awesome-kit@plugins-kit/task": {
+    "status": "adapted",
+    "instructions": "Use the installed runtime with explicit project root. Route emitted skill calls through Codex forwarding stubs and translate orchestration/handoff protocol to available Codex facilities."
+  },
+  "awesome-kit@plugins-kit/verbose-updates": {
+    "status": "adapted",
+    "instructions": "Apply the communication protocol with Codex terminology and the sibling task references."
+  },
+  "bootstrap@plugins-kit/bootstrap": {
+    "status": "adapted",
+    "instructions": "Reference Claude bootstrap lifecycle/config semantics only. Codex does not run bootstrap automatically or implement a second provisioning path."
+  },
+  "bootstrap@plugins-kit/plugin-dev": {
+    "status": "adapted",
+    "instructions": "Apply REQUIRED/REFUSE/DEGRADE to Codex forwarding and installed-plugin discovery; translate Claude skill-host terminology."
+  },
+  "cache-kit@plugins-kit/cache-report": {
+    "status": "claude-only",
+    "instructions": "The report reads Claude transcripts, usage schema, and session identity. Run it in Claude Code; no Codex transcript adapter is provided."
+  },
+  "claude-admin@spryfox-plugins/my-tool-permissions-audit": {
+    "status": "adapted",
+    "instructions": "Audits Claude settings files; use Codex file tools against the same settings corpus and preserve the source safety framework."
+  },
+  "claude-admin@spryfox-plugins/tool-permissions-pattern": {
+    "status": "adapted",
+    "instructions": "Apply the source safety decision tree; load its referenced framework before classifying a permission."
+  },
+  "claude-sandbox@spryfox-plugins/backup-claude-to-git": {
+    "status": "adapted",
+    "instructions": "Targets ~/.claude and requires the source facade plus private GitHub access; never substitute raw git operations."
+  },
+  "claude-sandbox@spryfox-plugins/writing-skills": {
+    "status": "adapted",
+    "instructions": "Load the source authoritative skills-kit cross-reference before authoring; preserve its deployment verification steps."
+  },
+  "claude-ui-kit@plugins-kit/statusline": {
+    "status": "claude-only",
+    "instructions": "This edits Claude settings and consumes Claude statusLine input. Codex has no compatible statusline surface."
+  },
+  "claude-user/archify": {
+    "status": "adapted",
+    "instructions": "Run the platform opener and optional export through Codex shell; preserve self-contained HTML and output contract."
+  },
+  "claude-user/arewedone": {
+    "status": "adapted",
+    "instructions": "Perform the same session/work-order audit with Codex context and tools; preserve ownership buckets and standing authorization rules."
+  },
+  "claude-user/design-patterns": {
+    "status": "adapted",
+    "instructions": "Replace required md-read/skill-write Skill calls with Codex file reads and edits."
+  },
+  "claude-user/gauntlet-loop": {
+    "status": "adapted",
+    "instructions": "Run the loop with Codex tool calls and available independent agents; if no clean critic context can be spawned, use the documented single self-review fallback."
+  },
+  "claude-user/grill-me": {
+    "status": "adapted",
+    "instructions": "Load the forwarded grilling skill first; do not bypass its source procedure with an invented interview."
+  },
+  "claude-user/grilling": {
+    "status": "adapted",
+    "instructions": "Use Codex questions and available delegation for fact finding; preserve round/frontier and wait-for-answer behavior."
+  },
+  "claude-user/handoff": {
+    "status": "adapted",
+    "instructions": "Write the handoff to the platform temp directory with Codex tools; preserve redaction and suggested-skills sections."
+  },
+  "claude-user/local-llm-domain": {
+    "status": "adapted",
+    "instructions": "Translate ${CLAUDE_SKILL_DIR} and allowed-tools declarations to the source path and Codex tool grants; retain systemd commands."
+  },
+  "claude-user/mermaid-render": {
+    "status": "adapted",
+    "instructions": "Use source render scripts and platform opener with Codex shell; retain artifact verification."
+  },
+  "claude-user/plain-english": {
+    "status": "supported",
+    "instructions": "Apply source writing rules directly; no harness-specific runtime required."
+  },
+  "claude-user/pydeps": {
+    "status": "adapted",
+    "instructions": "Run documented Python dependency inspection commands from the source location; translate Claude tool labels to Codex shell/file tools."
+  },
+  "claude-user/python-coding": {
+    "status": "adapted",
+    "instructions": "Apply source coding workflow with Codex tools; translate any Claude-specific tool names or skill references."
+  },
+  "claude-user/refactoring-patterns": {
+    "status": "adapted",
+    "instructions": "Use source guidance with Codex file edits and tests; translate tool references only."
+  },
+  "claude-user/script-development": {
+    "status": "adapted",
+    "instructions": "Use source procedure with Codex shell/file tools and its project paths; preserve verification steps."
+  },
+  "claude-user/show-me": {
+    "status": "adapted",
+    "instructions": "Generate self-contained HTML and use the platform opener; if browser control/foreground verification is unavailable, report that limitation and provide the path."
+  },
+  "claude-user/simple-english": {
+    "status": "supported",
+    "instructions": "Apply source ASD-STE100 rules directly; no harness-specific runtime required."
+  },
+  "claude-user/teach": {
+    "status": "adapted",
+    "instructions": "Use the current teaching workspace and source file layout; use Codex file tools and platform opener for lessons."
+  },
+  "claude-user/theme-factory": {
+    "status": "adapted",
+    "instructions": "Use source theme assets and Codex file/browser tools; preserve explicit choice and confirmation steps."
+  },
+  "claude-user/to-questionnaire": {
+    "status": "adapted",
+    "instructions": "Ask the two source questions, then write the questionnaire with Codex file tools to the specified path."
+  },
+  "claude-user/tooling-friction": {
+    "status": "adapted",
+    "instructions": "Reports Claude transcript tooling friction, not Codex cost; operate on the retained Claude corpus when present, otherwise report it unavailable."
+  },
+  "claude-user/wait-what": {
+    "status": "supported",
+    "instructions": "Apply source repitch behavior directly, using Codex context."
+  },
+  "claude-user/writing-for-agents": {
+    "status": "adapted",
+    "instructions": "Use the resolved personal skill root and Codex file tools; preserve skill mechanics and pointer rules."
+  },
+  "codex@openai-codex/codex-cli-runtime": {
+    "status": "claude-only",
+    "instructions": "Internal Claude rescue helper; do not expose as a Codex user capability."
+  },
+  "codex@openai-codex/codex-result-handling": {
+    "status": "claude-only",
+    "instructions": "Internal Claude-side presentation contract; do not expose as a Codex user capability."
+  },
+  "codex@openai-codex/gpt-5-4-prompting": {
+    "status": "claude-only",
+    "instructions": "Internal Claude rescue prompting contract; do not expose as a Codex user capability."
+  },
+  "content-pipeline-kit@plugins-kit/background-pipeline": {
+    "status": "claude-only",
+    "instructions": "Requires Claude --bg sessions, dispatcher leases, and Claude status surfaces; direct the user to Claude."
+  },
+  "content-pipeline-kit@plugins-kit/content-pipeline-domain": {
+    "status": "supported",
+    "instructions": "Live backends require the provisioned llm_scripting_kit and bootstrap_lib shared imports; select codex-cli when appropriate."
+  },
+  "content-pipeline-kit@plugins-kit/execute-work-unit": {
+    "status": "claude-only",
+    "instructions": "Requires Claude background worker launch prompts and Write-tool allowlists; direct the user to Claude."
+  },
+  "content-pipeline-kit@plugins-kit/workflow-pipeline": {
+    "status": "claude-only",
+    "instructions": "Requires the native Workflow agent()/parallel() tool contract; direct the user to Claude."
+  },
+  "core@spryfox-plugins/copy": {
+    "status": "adapted",
+    "instructions": "Requires Windows clipboard capability; use the source PowerShell/clip.exe procedure when that capability is available."
+  },
+  "core@spryfox-plugins/powershell": {
+    "status": "adapted",
+    "instructions": "Use only on Windows or a configured PowerShell runtime; translate Claude allowed-tools declaration to Codex shell grants."
+  },
+  "designer@spryfox-plugins/bulk-rename": {
+    "status": "adapted",
+    "instructions": "Use source Python bulk rewrite and structural validation; Codex must preserve its preview/verification and encoding rules."
+  },
+  "engineer@spryfox-plugins/investigate-crash": {
+    "status": "adapted",
+    "instructions": "Requires configured Backtrace access and its source scripts; direct the user to setup if credentials/service are absent."
+  },
+  "engineer@spryfox-plugins/open": {
+    "status": "adapted",
+    "instructions": "Use source project-launch targets and platform opener; preserve menu/argument dispatch."
+  },
+  "git-kit@plugins-kit/git-code-review": {
+    "status": "adapted",
+    "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation. Translate Agent, Workflow, AskUserQuestion, and Claude reviewer types; preserve review data locations."
+  },
+  "hue-kit@plugins-kit/hue-domain": {
+    "status": "adapted",
+    "instructions": "Use HUE_BRIDGE_IP plus HUE_APP_KEY/HUE_KEY_FILE; replace Claude AskUserQuestion/browser-open interactions with Codex equivalents and retain report-validate-apply ordering."
+  },
+  "llm-scripting-kit@plugins-kit/openrouter-account": {
+    "status": "adapted",
+    "instructions": "Adapt the ! prefix and hidden-prompt wording; preserve key precedence and the shared ~/.claude credential contract."
+  },
+  "p4-kit@plugins-kit/p4-code-review": {
+    "status": "adapted",
+    "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation with the real P4 workspace. Translate Claude reviewer and validator fan-out."
+  },
+  "prototyping@spryfox-plugins/codemap": {
+    "status": "adapted",
+    "instructions": "Use the source index/query procedure; preserve its project-specific config-index assumptions."
+  },
+  "prototyping@spryfox-plugins/migrate-id": {
+    "status": "adapted",
+    "instructions": "Use source quick-ref and append-only migration ledger procedure; preserve its preflight before writes."
+  },
+  "prototyping@spryfox-plugins/prototype-ui": {
+    "status": "adapted",
+    "instructions": "Use source UI-specific workflow and configured engine/project tools; external UI runtime is conditional."
+  },
+  "prototyping@spryfox-plugins/quick": {
+    "status": "adapted",
+    "instructions": "Preserve source read-implement-verify-checkpoint sequence with Codex tools."
+  },
+  "prototyping@spryfox-plugins/tdd": {
+    "status": "adapted",
+    "instructions": "Preserve source test-first requirement and demonstrate the test failing before implementation."
+  },
+  "prototyping@spryfox-plugins/test": {
+    "status": "adapted",
+    "instructions": "Use source tier selection and project test commands; report unavailable external tiers instead of inventing results."
+  },
+  "prototyping@spryfox-plugins/verify-cpp": {
+    "status": "adapted",
+    "instructions": "Use source intent-tracing procedure and configured C++/P4 evidence; translate tool calls only."
+  },
+  "secrets-kit@plugins-kit/secrets-kit": {
+    "status": "adapted",
+    "instructions": "Invoke ${INSTALLED_PLUGIN_ROOT}/bin/secrets-kit; keep passphrases out of chat and use a real terminal for unlock/init/rotate-identity tty prompts."
+  },
+  "skills-kit@plugins-kit/knowledge-encoding": {
+    "status": "adapted",
+    "instructions": "Follow the source cross-reference to md-domain before choosing placement; replace Skill() with the forwarded source skill."
+  },
+  "skills-kit@plugins-kit/materialized-output": {
+    "status": "supported",
+    "instructions": ""
+  },
+  "skills-kit@plugins-kit/md-domain": {
+    "status": "adapted",
+    "instructions": "Preserve exact verb x artifact routing and use Codex equivalents for native Claude file/tool calls."
+  },
+  "skills-kit@plugins-kit/update-documentation": {
+    "status": "adapted",
+    "instructions": "Preserve the explicit user approval pause before documentation edits and follow the source md-domain cross-reference."
+  },
+  "unreal-kit@plugins-kit/fix-up-redirectors": {
+    "status": "adapted",
+    "instructions": "Adapt platform venv paths; require P4/UE availability and explicit approval before destructive CL operations."
+  },
+  "unreal-kit@plugins-kit/ue-mcp-server": {
+    "status": "adapted",
+    "instructions": "Setup and inspect through source procedures; only MCP calls require the configured Unreal MCP connection, with UE Editor + bridge running."
+  },
+  "unreal-kit@plugins-kit/ue-python-api": {
+    "status": "adapted",
+    "instructions": "Retain the provisioned UE venv/data lib, project config, and Editor open/closed distinction."
+  },
+  "unreal-kit@plugins-kit/unreal-domain": {
+    "status": "adapted",
+    "instructions": "Treat UE Editor, MCP, and P4 as conditional capabilities; route through the source member skills."
+  },
+  "workflow-kit@plugins-kit/workflow-kit": {
+    "status": "adapted",
+    "instructions": "Validation and compilation are usable through the installed runtime. Native execution still requires Claude Workflow; never execute compiled workflow JavaScript by hand."
+  }
+}
