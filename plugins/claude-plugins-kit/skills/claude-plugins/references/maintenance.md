@@ -11,6 +11,8 @@ Generated state defaults to the platform application-data directory under `codex
 
 The generated marketplace is `claude-plugins-kit-generated`. Synchronization uses native `codex plugin marketplace add`, `codex plugin add`, and `codex plugin remove`. It never edits the downloaded plugin cache for Codex. An installed native Codex plugin with the same name wins. The bridge reports and skips that wrapper. It does not modify the native plugin.
 
-Resolve `<launcher>` with the [runtime contract](runtime.md). Then run `<launcher> sync --install` to refresh. Start a new Codex thread when it reports a catalog change. The trusted bundled SessionStart hook runs this command on startup and resume. It reports one of three states: current, changed and restart required, or error.
+Resolve `<launcher>` with the [runtime contract](runtime.md). Then run `<launcher> sync --install` to refresh. Start a new Codex thread when it reports a catalog change. The command reports one of three states: current, changed and restart required, or error.
+
+Codex 0.154.0 does not load bundled plugin hooks. Use manual gateway synchronization on that version. The package includes a SessionStart hook for forward compatibility. On a runtime that supports bundled hooks, review and trust the hook before use. The hook then runs synchronization on startup and resume.
 
 Only plugins with bridge ownership markers and matching state records can change. Missing or malformed sources and ownership records cause an error. The bridge leaves existing wrappers in place after these errors. To do a full cleanup, run `<launcher> uninstall` before you remove the bridge. Removing this authored plugin does not remove Claude plugins.

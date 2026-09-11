@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,25 @@ import pytest
 REPOSITORY = Path(__file__).resolve().parents[1]
 CODEX = shutil.which("codex")
 GENERATED_MARKETPLACE = "claude-plugins-kit-generated"
+
+
+def detected_codex_version() -> str | None:
+    if CODEX is None:
+        return None
+    result = subprocess.run(
+        [CODEX, "--version"],
+        text=True,
+        capture_output=True,
+        timeout=10,
+        shell=False,
+    )
+    if result.returncode:
+        return None
+    match = re.search(r"\b\d+\.\d+\.\d+\b", result.stdout)
+    return match.group(0) if match else None
+
+
+CODEX_VERSION = detected_codex_version()
 
 pytestmark = [
     pytest.mark.skipif(
@@ -151,7 +171,13 @@ def response(
         return result
 
 
-def app_server_skills(env: dict[str, str], cwd: Path, timeout: float = 30.0) -> list[dict[str, Any]]:
+def app_server_records(
+    env: dict[str, str],
+    cwd: Path,
+    method: str,
+    record_field: str,
+    timeout: float = 30.0,
+) -> list[dict[str, Any]]:
     assert CODEX is not None
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr:
         process = subprocess.Popen(
@@ -188,9 +214,13 @@ def app_server_skills(env: dict[str, str], cwd: Path, timeout: float = 30.0) -> 
             send_request(
                 process,
                 {
-                    "method": "skills/list",
+                    "method": method,
                     "id": 2,
-                    "params": {"cwds": [str(cwd)], "forceReload": True},
+                    "params": (
+                        {"cwds": [str(cwd)], "forceReload": True}
+                        if method == "skills/list"
+                        else {"cwds": [str(cwd)]}
+                    ),
                 },
             )
             result = response(messages, 2, deadline)
@@ -213,21 +243,33 @@ def app_server_skills(env: dict[str, str], cwd: Path, timeout: float = 30.0) -> 
         if failure is not None:
             stderr.seek(0)
             detail = stderr.read()[-4000:]
-            raise AssertionError(f"app-server skills/list failed: {failure}\n{detail}") from failure
+            raise AssertionError(f"app-server {method} failed: {failure}\n{detail}") from failure
         entries = result.get("data")
         if not isinstance(entries, list):
-            raise AssertionError("app-server skills/list response has no data array")
-        skills: list[dict[str, Any]] = []
+            raise AssertionError(f"app-server {method} response has no data array")
+        records_found: list[dict[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, dict) or entry.get("cwd") != str(cwd):
                 continue
             errors = entry.get("errors")
             if errors:
-                raise AssertionError(f"app-server skill discovery errors: {errors!r}")
-            records = entry.get("skills")
+                raise AssertionError(f"app-server {method} discovery errors: {errors!r}")
+            records = entry.get(record_field)
             if isinstance(records, list):
-                skills.extend(record for record in records if isinstance(record, dict))
-        return skills
+                records_found.extend(record for record in records if isinstance(record, dict))
+        return records_found
+
+
+def app_server_skills(
+    env: dict[str, str], cwd: Path, timeout: float = 30.0
+) -> list[dict[str, Any]]:
+    return app_server_records(env, cwd, "skills/list", "skills", timeout)
+
+
+def app_server_hooks(
+    env: dict[str, str], cwd: Path, timeout: float = 30.0
+) -> list[dict[str, Any]]:
+    return app_server_records(env, cwd, "hooks/list", "hooks", timeout)
 
 
 def skills_by_name(skills: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -244,17 +286,7 @@ def sync_installed_bridge(
     return json_command([*launcher, "sync", "--install"], env, cwd, timeout=60.0)
 
 
-def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) -> None:
-    cwd = tmp_path / "cwd"
-    cwd.mkdir()
-    (cwd / ".git").mkdir()
-    plugin_root = tmp_path / "claude-cache" / "awesome-kit" / "1.0.0"
-    orchestrate = write_skill(plugin_root, "orchestrate", "Initial orchestration description.")
-    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
-    personal_skills = tmp_path / "claude" / "skills"
-    write_registry(registry, plugin_root)
-    env = isolated_environment(tmp_path, registry, personal_skills)
-
+def install_bridge(env: dict[str, str], cwd: Path) -> Path:
     marketplace = json_command(
         [CODEX or "codex", "plugin", "marketplace", "add", str(REPOSITORY), "--json"],
         env,
@@ -270,6 +302,21 @@ def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) 
     installed_path = Path(str(installed["installedPath"]))
     assert installed_path.is_dir()
     assert installed_path.is_relative_to(Path(env["CODEX_HOME"]) / "plugins" / "cache")
+    return installed_path
+
+
+def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) -> None:
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".git").mkdir()
+    plugin_root = tmp_path / "claude-cache" / "awesome-kit" / "1.0.0"
+    orchestrate = write_skill(plugin_root, "orchestrate", "Initial orchestration description.")
+    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
+    personal_skills = tmp_path / "claude" / "skills"
+    write_registry(registry, plugin_root)
+    env = isolated_environment(tmp_path, registry, personal_skills)
+
+    installed_path = install_bridge(env, cwd)
     launcher = launcher_command(installed_path)
 
     first_sync = sync_installed_bridge(launcher, env, cwd)
@@ -327,3 +374,32 @@ def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) 
         and record.get("pluginId") == f"awesome-kit@{GENERATED_MARKETPLACE}"
         for record in installed_plugins
     )
+
+
+@pytest.mark.xfail(
+    CODEX_VERSION == "0.154.0",
+    reason="Codex CLI 0.154.0 does not expose bundled plugin hooks",
+    strict=True,
+)
+def test_installed_bridge_exposes_bundled_session_start_hook(tmp_path: Path) -> None:
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".git").mkdir()
+    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
+    personal_skills = tmp_path / "claude" / "skills"
+    write_registry(registry, tmp_path / "claude-cache" / "unused", installed=False)
+    env = isolated_environment(tmp_path, registry, personal_skills)
+    install_bridge(env, cwd)
+
+    plugin_hooks = [
+        hook
+        for hook in app_server_hooks(env, cwd)
+        if hook.get("pluginId") == "claude-plugins-kit@codex-kit"
+    ]
+    assert len(plugin_hooks) == 1, plugin_hooks
+    session_start = plugin_hooks[0]
+    assert session_start["eventName"] == "sessionStart"
+    assert session_start["handlerType"] == "command"
+    assert session_start["trustStatus"] == "untrusted"
+    expected_launcher = "launch.cmd" if os.name == "nt" else "launch.sh"
+    assert expected_launcher in session_start["command"]

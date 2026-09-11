@@ -11,7 +11,9 @@ codex plugin marketplace add kitaekatt/codex-kit
 codex plugin add claude-plugins-kit@codex-kit
 ```
 
-Start a new Codex thread so that Codex discovers the gateway skill and the bundled hook. Open `/hooks` and review the `claude-plugins-kit` SessionStart command. If the command matches this repository, trust it. Codex does not automatically trust installed plugin hooks. Start one more thread. The hook generates and installs the wrapper plugins. If the hook reports a catalog change, start a final new thread to load the skills.
+Start a new Codex thread so that Codex discovers the gateway skill. Invoke `claude-plugins-kit:claude-plugins` and ask it to refresh the bridge. If the gateway reports a catalog change, start one more thread to load the skills.
+
+Codex 0.154.0 does not load bundled plugin hooks. Manual gateway synchronization works on that version. The package includes a SessionStart hook for forward compatibility with runtimes that support bundled hooks. If `/hooks` shows this hook, review and trust it before use. The hook then synchronizes the wrappers on startup and resume.
 
 The generated marketplace is named `claude-plugins-kit-generated`. It is a marketplace name, not one plugin selector. It contains one wrapper plugin for each installed Claude plugin that exposes skills, plus `claude-user` when personal skills exist. The bridge installs selectors such as `awesome-kit@claude-plugins-kit-generated` itself.
 
