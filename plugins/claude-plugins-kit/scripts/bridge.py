@@ -451,7 +451,9 @@ def render_skill(
             "This is a generated forwarding skill; its canonical instructions remain in Claude's installation.\n\n"
             "First load the installed Codex gateway skill `claude-plugins-kit:claude-plugins` and follow its runtime "
             f"contract. Use its bridge resolver command `{command}`, then read and follow `{skill.relative_path}` "
-            "from the returned source root. Do not guess a path when resolution fails."
+            "from the returned source root. Do not guess a path when resolution fails. "
+            "For references to other skills, follow the runtime contract's skill-dependency procedure "
+            "before reading their SKILL.md files."
         )
     if extra:
         body += f"\n\nCodex compatibility instructions: {extra}"

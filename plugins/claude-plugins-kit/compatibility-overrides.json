@@ -257,7 +257,7 @@
   },
   "skills-kit@plugins-kit/update-documentation": {
     "status": "adapted",
-    "instructions": "Preserve the explicit user approval pause before documentation edits and follow the source md-domain cross-reference."
+    "instructions": "Preserve the explicit user approval pause before documentation edits. When the source's md-domain skill condition applies, load its Codex forwarding wrapper before its canonical skill."
   },
   "unreal-kit@plugins-kit/fix-up-redirectors": {
     "status": "adapted",

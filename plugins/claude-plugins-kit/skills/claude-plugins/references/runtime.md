@@ -17,7 +17,13 @@ Locate this installed gateway skill. The plugin root is three directories above 
 
 `info` returns JSON with `source_root`. Resolve the recorded relative path under that root. Then read the live `SKILL.md`. `personal-info` returns the personal skill root and source file. If a source is missing, ambiguous, invalid, or moved, report the error. Do not guess another path.
 
-Translate `${CLAUDE_PLUGIN_ROOT}` to `source_root` and `${CLAUDE_SKILL_DIR}` to the canonical skill folder. Resolve referenced files, scripts, and assets from that canonical folder. For a Claude `Skill(plugin:skill)` call, locate the generated Codex plugin in the same marketplace namespace and read its forwarding skill first. Report a missing or ambiguous wrapper instead of bypassing its compatibility guard.
+Translate `${CLAUDE_PLUGIN_ROOT}` to `source_root` and `${CLAUDE_SKILL_DIR}` to the canonical skill folder. Resolve ordinary supporting files, scripts, and assets from that canonical folder.
+
+For a skill dependency, first locate its forwarding wrapper in the available Codex skills catalog by matching source identity and skill metadata, including `source-kind: personal` for personal skills. Read that wrapper and apply its compatibility instructions before reading any canonical `SKILL.md`. This procedure covers `Skill(...)` calls, slash commands, bare skill names, relative or sibling `SKILL.md` paths, and entries in `required_skills` that identify actual skills; other entries remain host capability requirements. A native skill may substitute only when a documented bridge mapping identifies the dependency; a same-name collision alone is insufficient. Report a missing, ambiguous, stale, disabled, or Claude-only wrapper instead of loading its Claude source directly.
+
+For plugin skills, resolve `skills/<name>/SKILL.md` against `source_root` and sibling `../<name>/SKILL.md` against the current canonical skill folder. Match the resulting path to the wrapper's `source-relative-path` metadata.
+
+Keep conditional references conditional; a related-skills list or metadata alone does not require eager loading or authorize workflow execution. Ordinary reference documents do not require loading their owner's skill unless the source instructions say so.
 
 The `python` command uses the plugin's existing Claude-provisioned virtual environment. It preserves the caller's working directory, exports `CLAUDE_PLUGIN_ROOT`, `<PLUGIN>_ROOT`, and `<PLUGIN>_VENV`, and passes arguments without a shell. It does not install or repair dependencies. When the runtime is absent, use Claude's normal provisioning lifecycle and retry.
 
