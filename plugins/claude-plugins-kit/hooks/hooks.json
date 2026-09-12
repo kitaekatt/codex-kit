@@ -6,10 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/scripts/launch.sh\" sync --install --startup",
-            "commandWindows": "\"%PLUGIN_ROOT%\\scripts\\launch.cmd\" sync --install --startup",
-            "statusMessage": "Refreshing Claude skill plugins",
-            "timeout": 60,
+            "command": "\"$PLUGIN_ROOT/scripts/launch.sh\" maintain --startup",
+            "commandWindows": "\"%PLUGIN_ROOT%\\scripts\\launch.cmd\" maintain --startup",
+            "statusMessage": "Maintaining Claude skill plugins",
+            "timeout": 300,
             "additionalContextLimit": 1000
           }
         ]

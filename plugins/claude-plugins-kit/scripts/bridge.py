@@ -891,6 +891,11 @@ def sync(
             failures: list[str] = []
             for name in install_changes:
                 try:
+                    if respect_disabled:
+                        latest = installed_plugins(runner)
+                        if any(item["pluginId"] == f"{name}@{GENERATED_MARKETPLACE}" and item.get("enabled") is False for item in latest):
+                            disabled.add(name)
+                            continue
                     run_plain(
                         runner,
                         ["plugin", "add", f"{name}@{GENERATED_MARKETPLACE}", "--json"],

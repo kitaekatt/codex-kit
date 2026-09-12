@@ -425,6 +425,43 @@ def test_unfinished_journal_is_validated_before_resume(
     assert "journal" in result["message"]
 
 
+def test_older_release_journal_is_revalidated_and_recovered(bridge, tmp_path: Path) -> None:
+    env, legacy_files = legacy_fixture(tmp_path)
+    add_claude_source(env, tmp_path)
+    failed = bridge.migrate(env=env, runner=InstallFailureRunner(), install=True)
+    journal_path = Path(failed["backup"]) / "journal.json"
+    journal = json.loads(journal_path.read_text())
+    journal["expected_version"] = "0.1.0"
+    journal_path.write_text(json.dumps(journal))
+    before = journal_path.read_bytes()
+    preview = bridge.migrate(env=env, runner=InstallFailureRunner(), install=False)
+    assert preview["status"] == "changed", preview
+    assert journal_path.read_bytes() == before
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env)
+    result = bridge.migrate(env=env, runner=runner, install=True, sync_launcher=syncer, discoverer=discoverer)
+    assert result["status"] == "changed", result
+    assert result["phase"] == "complete"
+    assert result["backup"] == failed["backup"]
+    completed = json.loads(journal_path.read_text())
+    assert completed["previous_version"] == "0.1.0"
+    assert completed["expected_version"] != "0.1.0"
+
+
+def test_newer_release_journal_is_never_downgraded(bridge, tmp_path: Path) -> None:
+    env, legacy_files = legacy_fixture(tmp_path)
+    failed = bridge.migrate(env=env, runner=InstallFailureRunner(), install=True)
+    journal_path = Path(failed["backup"]) / "journal.json"
+    journal = json.loads(journal_path.read_text())
+    journal["expected_version"] = "99.0.0"
+    journal_path.write_text(json.dumps(journal))
+    before = journal_path.read_bytes()
+    result = bridge.migrate(env=env, runner=InstallFailureRunner(), install=True)
+    assert result["status"] == "error"
+    assert "newer plugin version" in result["message"]
+    assert journal_path.read_bytes() == before
+    assert all(path.exists() for path in legacy_files)
+
+
 def test_resume_rejects_dangling_symlink_replacing_cleanup_target(
     bridge, tmp_path: Path
 ) -> None:

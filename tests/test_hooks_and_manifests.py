@@ -4,12 +4,12 @@ import json
 from pathlib import Path
 
 
-def test_hook_runs_installing_sync_cross_platform():
+def test_hook_runs_maintenance_cross_platform():
     root = Path(__file__).parents[1] / "plugins" / "claude-plugins-kit"
     hooks = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     handler = hooks["hooks"]["SessionStart"][0]["hooks"][0]
-    assert handler["command"].endswith('launch.sh\" sync --install --startup')
-    assert handler["commandWindows"].endswith('launch.cmd\" sync --install --startup')
+    assert handler["command"].endswith('launch.sh\" maintain --startup')
+    assert handler["commandWindows"].endswith('launch.cmd\" maintain --startup')
     assert "$PLUGIN_ROOT" in handler["command"]
     assert "%PLUGIN_ROOT%" in handler["commandWindows"]
 

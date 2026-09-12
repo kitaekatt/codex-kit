@@ -1028,9 +1028,14 @@ def _validate_journal(
 ) -> None:
     if value.get("schema") != JOURNAL_SCHEMA or value.get("migration") != MIGRATION_ID:
         raise MigrationError(f"invalid migration journal ownership: {backup / 'journal.json'}")
-    if value.get("codex_home") != str(codex_home) or value.get("expected_version") != expected_version:
+    previous_version = value.get("expected_version")
+    def stable_version(version: object) -> tuple[int, ...]:
+        if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            raise MigrationError(f"invalid migration journal release version: {version!r}")
+        return tuple(int(part) for part in version.split("."))
+    if value.get("codex_home") != str(codex_home) or stable_version(previous_version) > stable_version(expected_version):
         raise MigrationError(
-            f"unfinished migration journal targets another home or plugin version: {backup / 'journal.json'}"
+            f"unfinished migration journal targets another home or a newer plugin version: {backup / 'journal.json'}"
         )
     artifacts = value.get("artifacts")
     legacy = value.get("legacy")
@@ -1410,6 +1415,11 @@ def migrate(
             legacy = _legacy_summary(current)
         if journal_path is None or backup is None:
             raise MigrationError("migration backup journal was not initialized")
+        if journal["expected_version"] != expected_version:
+            # The entire old journal and its backup preimages were validated above.
+            # Repeat installation and native verification with this newer release.
+            journal["previous_version"] = journal["expected_version"]
+            journal["expected_version"] = expected_version
         phase = "install"
         journal["phase"] = phase
         journal["error"] = None
