@@ -142,7 +142,9 @@ class SuccessfulRunner:
         elif call == ("plugin", "list", "--json"):
             output = {"installed": self.installed, "available": []}
         elif call == ("plugin", "add", "claude-plugins-kit@codex-kit", "--json"):
-            manifest = json.loads((self.installed_root / "plugin.json").read_text())
+            manifest = json.loads(
+                (self.installed_root / ".codex-plugin" / "plugin.json").read_text()
+            )
             self.installed = [
                 {
                     "pluginId": "claude-plugins-kit@codex-kit",
@@ -169,7 +171,9 @@ def successful_native(
     repository = Path(__file__).parents[1]
     authored = repository / "plugins" / "claude-plugins-kit"
     codex_home = Path(env["CODEX_HOME"])
-    version = json.loads((authored / "plugin.json").read_text())["version"]
+    version = json.loads(
+        (authored / ".codex-plugin" / "plugin.json").read_text()
+    )["version"]
     installed_root = codex_home / "plugins" / "cache" / "codex-kit" / "claude-plugins-kit" / version
     shutil.copytree(authored, installed_root)
     runner = SuccessfulRunner(repository, installed_root)
