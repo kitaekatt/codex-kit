@@ -494,3 +494,107 @@ def test_managed_path_guards_reject_dangling_intermediate_symlink(
         migration._safe_descendant(dangling / "artifact", managed, "cleanup target")
     with pytest.raises(migration.MigrationError, match="symlink or reparse"):
         migration._data_root({"CODEX_KIT_DATA_ROOT": str(dangling / "data")})
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Legacy forwarder with a long description\n  wrapped by the retired generator.",
+        "'Legacy forwarder: long description\n  with the generator''s quoted text.'",
+        '"Legacy forwarder with a long description\n  wrapped inside double quotes."',
+        "'Legacy forwarder with paragraph breaks\n\n  and the generator''s quoted text.'",
+    ],
+)
+def test_wrapped_legacy_description_can_migrate_without_mutating_preview(
+    bridge, migration, tmp_path: Path, description: str
+) -> None:
+    env, files = legacy_fixture(tmp_path)
+    stub = files[1]
+    stub.write_text(
+        stub.read_text().replace("description: Legacy forwarder.", f"description: {description}"),
+        encoding="utf-8",
+    )
+    before = {path: path.read_bytes() for path in files}
+    found = migration.inventory(env)
+    assert found.hook_count == found.stub_count == found.state_count == 1
+    assert found.identities == ("awesome@plugins-kit/do-work",)
+    assert {path: path.read_bytes() for path in files} == before
+    assert not Path(env["CODEX_KIT_DATA_ROOT"]).exists()
+
+    add_claude_source(env, tmp_path)
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env)
+    result = bridge.migrate(
+        env=env, runner=runner, install=True, sync_launcher=syncer, discoverer=discoverer
+    )
+    assert result["status"] == "changed", result
+    assert all(not path.exists() for path in files)
+    assert (Path(result["backup"]) / "codex-home" / "hooks.json").read_bytes() == before[files[0]]
+    assert (Path(result["backup"]) / "codex-home" / "skills" / stub.parent.name / "SKILL.md").read_bytes() == before[stub]
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "description: Wrapped description\n  continues.\nmetadata:\n  generator: wrong",
+        "description: Wrapped description\n  continues.\nmetadata:\n  source-identity: foreign",
+        "description: Wrapped description\n  continues.\nmetadata:\n    extra: unsafe",
+    ],
+)
+def test_wrapped_description_does_not_relax_ownership_guards(
+    migration, tmp_path: Path, replacement: str
+) -> None:
+    env, files = legacy_fixture(tmp_path)
+    stub = files[1]
+    stub.write_text(
+        stub.read_text().replace("description: Legacy forwarder.\nmetadata:", replacement),
+        encoding="utf-8",
+    )
+    before = {path: path.read_bytes() for path in files}
+    with pytest.raises(migration.MigrationError):
+        migration.inventory(env)
+    assert {path: path.read_bytes() for path in files} == before
+
+
+def test_verified_apply_accepts_codex_home_alias_for_native_and_generated_cache(
+    bridge, tmp_path: Path
+) -> None:
+    env, files = legacy_fixture(tmp_path)
+    alias = tmp_path / "codex-home-alias"
+    alias.symlink_to(Path(env["CODEX_HOME"]), target_is_directory=True)
+    env["CODEX_HOME"] = str(alias)
+    add_claude_source(env, tmp_path)
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env)
+    result = bridge.migrate(
+        env=env, runner=runner, install=True, sync_launcher=syncer, discoverer=discoverer
+    )
+    assert result["status"] == "changed", result
+    assert result["phase"] == "complete"
+    assert all(not path.exists() for path in files)
+    assert Path(result["backup"]).is_dir()
+
+
+@pytest.mark.parametrize("foreign_alias", [False, True])
+def test_home_alias_support_preserves_cache_escape_guards(
+    bridge, tmp_path: Path, foreign_alias: bool
+) -> None:
+    env, files = legacy_fixture(tmp_path)
+    alias = tmp_path / "codex-home-alias"
+    alias.symlink_to(Path(env["CODEX_HOME"]), target_is_directory=True)
+    env["CODEX_HOME"] = str(alias)
+    add_claude_source(env, tmp_path)
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env)
+    installed = runner.installed_root
+    outside = tmp_path / "foreign-home" / "plugins" / "cache" / "codex-kit" / "claude-plugins-kit" / installed.name
+    outside.parent.mkdir(parents=True)
+    shutil.move(str(installed), str(outside))
+    if foreign_alias:
+        runner.installed_root = outside
+    else:
+        installed.symlink_to(outside, target_is_directory=True)
+    before = {path: path.read_bytes() for path in files}
+    result = bridge.migrate(
+        env=env, runner=runner, install=True, sync_launcher=syncer, discoverer=discoverer
+    )
+    assert result["status"] == "error", result
+    assert result["phase"] == "install"
+    assert {path: path.read_bytes() for path in files} == before

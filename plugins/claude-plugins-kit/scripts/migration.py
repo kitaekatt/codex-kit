@@ -238,9 +238,26 @@ def _legacy_frontmatter(content: bytes, path: Path) -> dict[str, Any]:
         end = next(index for index in range(1, len(lines)) if lines[index].strip() == "---")
     except StopIteration as exc:
         raise MigrationError(f"legacy ownership marker has unterminated frontmatter: {path}") from exc
+    # The retired PyYAML generator wrapped plain and quoted descriptions at
+    # two spaces, including paragraph breaks. Fold only that presentation
+    # field; ownership names, metadata, duplicates, and indentation remain
+    # subject to the strict parser below.
+    folded: list[tuple[int, str]] = []
+    for line_number, line in enumerate(lines[1:end], start=2):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if (
+            folded
+            and folded[-1][1].startswith("description:")
+            and re.fullmatch(r"  \S.*", line)
+        ):
+            first_line, description = folded[-1]
+            folded[-1] = (first_line, description + " " + line.strip())
+        else:
+            folded.append((line_number, line))
     root: dict[str, Any] = {}
     stack: list[tuple[int, dict[str, Any]]] = [(-1, root)]
-    for line_number, line in enumerate(lines[1:end], start=2):
+    for line_number, line in folded:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if "\t" in line[: len(line) - len(line.lstrip())]:
@@ -618,9 +635,27 @@ def _source_contract(bridge_root: Path) -> tuple[str, Path]:
     return version, bridge_root
 
 
-def _verify_installed_root(path: Path, codex_home: Path, expected_version: str) -> Path:
+def _cache_descendant(
+    path: Path, raw_home: Path, codex_home: Path, label: str
+) -> Path:
+    """Accept the resolved home alias without permitting links inside cache."""
+    absolute = path.expanduser().absolute()
     cache = codex_home / "plugins" / "cache"
-    root = _safe_descendant(path, cache, "installedPath")
+    if raw_home.resolve(strict=False) != codex_home:
+        raise MigrationError("CODEX_HOME alias no longer resolves to its managed home")
+    try:
+        relative = absolute.relative_to(raw_home / "plugins" / "cache")
+    except ValueError:
+        pass
+    else:
+        absolute = cache / relative
+    return _safe_descendant(absolute, cache, label)
+
+
+def _verify_installed_root(
+    path: Path, codex_home: Path, expected_version: str, raw_home: Path | None = None
+) -> Path:
+    root = _cache_descendant(path, raw_home or codex_home, codex_home, "installedPath")
     compatibility = _read_manifest(
         root / ".codex-plugin" / "plugin.json", "installed authored compatibility manifest"
     )
@@ -870,7 +905,8 @@ def _verify_catalog(
         raise MigrationError(
             f"native claude-plugins-kit must be installed and enabled at version {expected_version}"
         )
-    _verify_installed_root(installed_root, _resolve_codex_home(env)[1], expected_version)
+    raw_home, codex_home = _resolve_codex_home(env)
+    _verify_installed_root(installed_root, codex_home, expected_version, raw_home)
     expected_plugins, expected_skills = _expected_generated(installed_root, env, skipped)
     generated_records = [
         item for item in catalog["installed"] if item.get("marketplaceName") == GENERATED_MARKETPLACE
@@ -932,7 +968,6 @@ def _verify_catalog(
     missing = sorted(expected_skills - set(by_name))
     if missing:
         raise MigrationError(f"generated skills are absent from Codex skills/list: {missing}")
-    cache = _resolve_codex_home(env)[1] / "plugins" / "cache"
     for qualified in sorted(expected_skills):
         record = by_name[qualified]
         plugin = qualified.split(":", 1)[0]
@@ -944,7 +979,7 @@ def _verify_catalog(
         skill_path = record.get("path")
         if not isinstance(skill_path, str):
             raise MigrationError(f"generated skill has no path: {qualified}")
-        path = _safe_descendant(Path(skill_path), cache, f"generated skill {qualified}")
+        path = _cache_descendant(Path(skill_path), raw_home, codex_home, f"generated skill {qualified}")
         _require_regular(path, f"generated skill {qualified}")
         folder = qualified.split(":", 1)[1]
         expected_content = expected_plugins[plugin][1][f"skills/{folder}/SKILL.md"]
@@ -1459,7 +1494,7 @@ def migrate(
         ):
             raise MigrationError("native bridge install returned no trustworthy installedPath")
         installed_root = _verify_installed_root(
-            Path(added_plugin["installedPath"]), codex_home, expected_version
+            Path(added_plugin["installedPath"]), codex_home, expected_version, raw_home
         )
         journal["native"] = {"installed_path": str(installed_root)}
         _record_operation(journal_path, journal, "plugin-add", AUTHORED_ID, "applied")
