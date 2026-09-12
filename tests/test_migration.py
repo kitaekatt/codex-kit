@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -355,7 +356,10 @@ def test_verified_apply_preserves_foreign_files_and_is_idempotent(
         {"type": "command", "command": "python foreign.py"}
     ]
     backup = Path(result["backup"])
-    assert backup.stat().st_mode & 0o777 == 0o700
+    if os.name == "posix":
+        assert backup.stat().st_mode & 0o777 == 0o700
+    else:
+        assert backup.is_dir()
     assert (backup / "journal.json").is_file()
 
     rerun = bridge.migrate(env=env, runner=runner, install=True)

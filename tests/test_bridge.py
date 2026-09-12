@@ -1,10 +1,99 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
+
+
+def test_runner_preserves_explicit_path_and_arguments_with_spaces(bridge, tmp_path):
+    executable = tmp_path / "path with spaces" / "codex.exe"
+    executable.parent.mkdir()
+    executable.write_text("", encoding="utf-8")
+    observed = {}
+
+    def fake_run(arguments, **kwargs):
+        observed["arguments"] = arguments
+        observed["kwargs"] = kwargs
+        return subprocess.CompletedProcess(arguments, 0, "ok", "")
+
+    original = subprocess.run
+    subprocess.run = fake_run
+    try:
+        result = bridge.Runner(str(executable)).run(["--flag", "value with spaces"])
+    finally:
+        subprocess.run = original
+    assert result.stdout == "ok"
+    assert observed["arguments"] == [str(executable), "--flag", "value with spaces"]
+    assert observed["kwargs"]["shell"] is False
+
+
+def test_runner_missing_executable_is_actionable(bridge):
+    with pytest.raises(bridge.BridgeError, match="CODEX_KIT_CODEX_BIN"):
+        bridge.Runner("does-not-exist-codex").run(["--version"])
+
+
+def test_default_discovery_prefers_environment_override(bridge, monkeypatch):
+    monkeypatch.setenv("CODEX_KIT_CODEX_BIN", r"C:\Path With Spaces\override.exe")
+    monkeypatch.setattr(bridge.shutil, "which", lambda _: pytest.fail("PATH must not win"))
+    observed = {}
+    monkeypatch.setattr(bridge.subprocess, "run", lambda arguments, **kwargs: observed.update(arguments=arguments, kwargs=kwargs) or subprocess.CompletedProcess(arguments, 0, "", ""))
+    bridge.Runner().run(["--flag", "value with spaces"])
+    assert observed["arguments"] == [r"C:\Path With Spaces\override.exe", "--flag", "value with spaces"]
+    assert observed["kwargs"]["shell"] is False
+
+
+def test_default_discovery_uses_path_result(bridge, monkeypatch):
+    monkeypatch.delenv("CODEX_KIT_CODEX_BIN", raising=False)
+    monkeypatch.setattr(bridge.shutil, "which", lambda name: r"C:\Tools\codex.exe")
+    observed = {}
+    monkeypatch.setattr(bridge.subprocess, "run", lambda arguments, **kwargs: observed.update(arguments=arguments, kwargs=kwargs) or subprocess.CompletedProcess(arguments, 0, "", ""))
+    bridge.Runner().run(["plugin", "list", "--json"])
+    assert observed["arguments"] == [r"C:\Tools\codex.exe", "plugin", "list", "--json"]
+    assert observed["kwargs"]["shell"] is False
+
+
+def test_windows_discovery_selects_newest_install(bridge, monkeypatch, tmp_path):
+    monkeypatch.delenv("CODEX_KIT_CODEX_BIN", raising=False)
+    monkeypatch.setattr(bridge.shutil, "which", lambda _: None)
+    root = tmp_path / "Local App Data" / "OpenAI" / "Codex" / "bin"
+    older = root / "older" / "codex.exe"
+    newer = root / "newer" / "codex.exe"
+    older.parent.mkdir(parents=True)
+    newer.parent.mkdir(parents=True)
+    older.write_text("")
+    newer.write_text("")
+    os.utime(older, (1, 1))
+    os.utime(newer, (2, 2))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local App Data"))
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(name="nt", environ=dict(os.environ)))
+    assert bridge.Runner()._executable() == str(newer)
+
+
+@pytest.mark.parametrize("local_app_data", [None, ""])
+def test_windows_discovery_without_local_appdata_is_actionable(bridge, monkeypatch, local_app_data):
+    monkeypatch.delenv("CODEX_KIT_CODEX_BIN", raising=False)
+    monkeypatch.setattr(bridge.shutil, "which", lambda _: None)
+    if local_app_data is None:
+        monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    else:
+        monkeypatch.setenv("LOCALAPPDATA", local_app_data)
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(name="nt", environ=dict(os.environ)))
+    with pytest.raises(bridge.BridgeError, match="CODEX_KIT_CODEX_BIN"):
+        bridge.Runner()._executable()
+
+
+def test_windows_discovery_without_install_directory_is_actionable(bridge, monkeypatch, tmp_path):
+    monkeypatch.delenv("CODEX_KIT_CODEX_BIN", raising=False)
+    monkeypatch.setattr(bridge.shutil, "which", lambda _: None)
+    monkeypatch.setattr(bridge, "os", SimpleNamespace(
+        name="nt", environ={**os.environ, "LOCALAPPDATA": str(tmp_path / "missing")}
+    ))
+    with pytest.raises(bridge.BridgeError, match="CODEX_KIT_CODEX_BIN"):
+        bridge.Runner()._executable()
 
 
 class FakeRunner:

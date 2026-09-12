@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -168,18 +169,28 @@ def test_lock_contention_leaves_catalog_untouched(bridge, tmp_path):
     assert not any(call[:2] == ("plugin", "add") for call in runner.calls)
 
 
-@pytest.mark.parametrize("behavior", ["success", "failure", "disabled", "removed"])
+@pytest.mark.parametrize("behavior", ["success", "failure", "verify", "disabled", "removed"])
 def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch, behavior):
     env, _, _ = source_fixture(tmp_path)
-    env["CODEX_HOME"] = str(tmp_path / "codex-home")
+    real_home = tmp_path / "codex-home"
+    alias_home = tmp_path / "codex-home-alias"
+    real_home.mkdir()
+    alias_home.symlink_to(real_home, target_is_directory=True)
+    env["CODEX_HOME"] = str(alias_home)
     marketplace = official_fixture(tmp_path)
     candidate = Path(marketplace["root"]) / "plugins/claude-plugins-kit"
     manifest_path = candidate / ".codex-plugin/plugin.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["version"] = "9.0.0"
     manifest_path.write_text(json.dumps(manifest))
-    installed_root = Path(env["CODEX_HOME"]) / "plugins/cache/codex-kit/claude-plugins-kit/9.0.0"
+    installed_root = real_home / "plugins/cache/codex-kit/claude-plugins-kit/9.0.0"
     shutil.copytree(candidate, installed_root)
+    reported_installed_root = alias_home / "plugins/cache/codex-kit/claude-plugins-kit/9.0.0"
+    if behavior == "verify":
+        installed_manifest = installed_root / ".codex-plugin/plugin.json"
+        invalid = json.loads(installed_manifest.read_text())
+        invalid["version"] = "8.0.0"
+        installed_manifest.write_text(json.dumps(invalid))
     install = ("plugin", "add", "claude-plugins-kit@codex-kit", "--json")
     class ReleaseRunner(FakeRunner):
         def run(self, arguments):
@@ -192,23 +203,24 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
             if tuple(arguments) == install:
                 if behavior == "failure":
                     return subprocess.CompletedProcess(arguments, 1, "", "offline install")
-                return subprocess.CompletedProcess(arguments, 0, json.dumps({"pluginId": "claude-plugins-kit@codex-kit", "version": "9.0.0", "installedPath": str(installed_root)}), "")
+                return subprocess.CompletedProcess(arguments, 0, json.dumps({"pluginId": "claude-plugins-kit@codex-kit", "version": "9.0.0", "installedPath": str(reported_installed_root)}), "")
             return result
     runner = ReleaseRunner(installed=[authored_record()], marketplaces=[marketplace])
     original_run = subprocess.run
     calls = []
     def refresh(arguments, **kwargs):
-        if str(installed_root) in str(arguments[0]):
+        expected_launcher = installed_root / "scripts" / ("launch.cmd" if sys.platform == "win32" else "launch.sh")
+        if str(expected_launcher) in arguments:
             calls.append(arguments)
             return subprocess.CompletedProcess(arguments, 0, json.dumps({"status": "unchanged", "changed": False, "message": "Current."}), "")
         return original_run(arguments, **kwargs)
     monkeypatch.setattr(subprocess, "run", refresh)
     result = bridge.maintain(env=env, runner=runner)
     if behavior == "success":
-        assert result["bridge_updated"] is True, result
+        assert result.get("bridge_updated") is True, result
         assert calls and "--respect-disabled" in calls[0]
         assert not result["warnings"]
-    elif behavior == "failure":
+    elif behavior in {"failure", "verify"}:
         assert result["warnings"]
         assert not calls
         state = json.loads((Path(env["CODEX_KIT_DATA_ROOT"]) / "maintenance.json").read_text())

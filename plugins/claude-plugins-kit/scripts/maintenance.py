@@ -123,8 +123,10 @@ def update_release(*, bridge: Any, env: Mapping[str, str], runner: Any,
         if not isinstance(installed, dict) or installed.get("pluginId") != PLUGIN_ID or installed.get("version") != manifest["version"] or not isinstance(installed.get("installedPath"), str):
             raise ValueError("native bridge install did not return the selected release")
         migration = bridge._migration_module()
-        _, codex_home = migration._resolve_codex_home(env)
-        new_root = migration._verify_installed_root(Path(installed["installedPath"]), codex_home, manifest["version"])
+        raw_home, codex_home = migration._resolve_codex_home(env)
+        new_root = migration._verify_installed_root(
+            Path(installed["installedPath"]), codex_home, manifest["version"], raw_home
+        )
     state["last_success"] = now
     bridge.atomic_write(state_path, json.dumps(state, sort_keys=True) + "\n")
     return new_root

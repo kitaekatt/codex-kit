@@ -63,14 +63,42 @@ class Runner:
         self.executable = executable
         self.timeout = timeout
 
+    @staticmethod
+    def _discover_default() -> str:
+        override = os.environ.get("CODEX_KIT_CODEX_BIN")
+        if override:
+            return override
+        found = shutil.which("codex.exe" if os.name == "nt" else "codex")
+        if found:
+            return found
+        if os.name == "nt":
+            local_app_data = os.environ.get("LOCALAPPDATA")
+            if not local_app_data:
+                raise BridgeError("Codex executable not found; set CODEX_KIT_CODEX_BIN to its full path")
+            root = Path(local_app_data) / "OpenAI" / "Codex" / "bin"
+            candidates = []
+            for path in root.glob("*/codex.exe"):
+                try:
+                    candidates.append((path.stat().st_mtime, path))
+                except OSError:
+                    continue
+            candidates.sort(key=lambda item: item[0], reverse=True)
+            if candidates:
+                return str(candidates[0][1])
+        raise BridgeError("Codex executable not found; set CODEX_KIT_CODEX_BIN to its full path")
+
+    def _executable(self) -> str:
+        return self._discover_default() if self.executable == "codex" else self.executable
+
     def run(self, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [self.executable, *arguments],
-            text=True,
-            capture_output=True,
-            shell=False,
-            timeout=self.timeout,
-        )
+        executable = self._executable()
+        try:
+            return subprocess.run([executable, *arguments], text=True, capture_output=True,
+                                  shell=False, timeout=self.timeout)
+        except FileNotFoundError as exc:
+            raise BridgeError(
+                f"Codex executable is unavailable: {executable!r}; set CODEX_KIT_CODEX_BIN to its full path"
+            ) from exc
 
 
 class FileLock:
