@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$PLUGIN_ROOT/scripts/launch.sh\" maintain --startup",
-            "commandWindows": "\"%PLUGIN_ROOT%\\scripts\\launch.cmd\" maintain --startup",
+            "command": "root=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT or PLUGIN_ROOT must be set}}\"; exec \"$root/scripts/launch.sh\" maintain --startup",
+            "commandWindows": "if defined CLAUDE_PLUGIN_ROOT (call \"%CLAUDE_PLUGIN_ROOT%\\scripts\\launch.cmd\" maintain --startup) else if defined PLUGIN_ROOT (call \"%PLUGIN_ROOT%\\scripts\\launch.cmd\" maintain --startup) else (echo CLAUDE_PLUGIN_ROOT or PLUGIN_ROOT must be set 1>&2 & exit /b 2)",
             "statusMessage": "Maintaining Claude skill plugins",
             "timeout": 300,
             "additionalContextLimit": 1000
