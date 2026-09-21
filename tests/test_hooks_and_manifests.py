@@ -9,13 +9,9 @@ def test_hook_runs_maintenance_cross_platform():
     hooks = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     handler = hooks["hooks"]["SessionStart"][0]["hooks"][0]
     assert handler["command"].endswith('launch.sh\" maintain --startup')
-    assert 'call "%CLAUDE_PLUGIN_ROOT%\\scripts\\launch.cmd" maintain --startup' in handler["commandWindows"]
-    assert 'call "%PLUGIN_ROOT%\\scripts\\launch.cmd" maintain --startup' in handler["commandWindows"]
+    assert handler["commandWindows"] == "cmd.exe /d /c %CLAUDE_PLUGIN_ROOT%\\scripts\\launch.cmd maintain --startup"
     assert "${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:?" in handler["command"]
     assert "$root/scripts/launch.sh" in handler["command"]
-    assert "if defined CLAUDE_PLUGIN_ROOT" in handler["commandWindows"]
-    assert "if defined PLUGIN_ROOT" in handler["commandWindows"]
-    assert "exit /b 2" in handler["commandWindows"]
 
 
 def test_authored_manifests_and_marketplace_names_match():
