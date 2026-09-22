@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "directory": "plugins/claude-plugins-kit/skills/claude-plugins/references",
+  "decision": "none",
+  "source_sha": "8f149993e12b3560030427d0173e823740cc1acd",
+  "dirty": false,
+  "identity": "",
+  "instructions": "",
+  "references": []
+}
