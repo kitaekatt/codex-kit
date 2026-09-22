@@ -208,7 +208,12 @@ def test_initial_sync_generates_forwarders_and_installs_native_plugins(bridge, t
     text = wrapper.read_text(encoding="utf-8")
     assert "CANONICAL SECRET BODY" not in text
     assert "claude-plugins-kit:claude-plugins" in text
+    assert "info alpha@test do-work" in text
     assert "/home/" not in text and "DEVROOT" not in text
+    report = json.loads((wrapper.parent.parent.parent / "compatibility" / "do-work.json").read_text())
+    assert report["schema"] == 1
+    assert report["source"]["identity"] == "alpha@test"
+    assert report["generation"] in text
     assert ("plugin", "marketplace", "add", str(data / bridge.GENERATED_MARKETPLACE), "--json") in runner.calls
     assert ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}", "--json") in runner.calls
 
@@ -222,6 +227,98 @@ def test_native_plugin_collision_wins_without_native_mutation(bridge, tmp_path):
     assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha").exists()
     assert not any(call[:2] == ("plugin", "remove") for call in runner.calls)
     assert not any(call[:3] == ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}") for call in runner.calls)
+
+
+def test_source_change_during_scaffold_does_not_publish_a_mixed_generation(bridge, tmp_path, monkeypatch):
+    env, _, roots, runner = initial_sync(bridge, tmp_path)
+    wrapper = Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha"
+    prior_wrapper = (wrapper / "skills/do-work/SKILL.md").read_text()
+    prior_report = (wrapper / "compatibility/do-work.json").read_text()
+    write_skill(roots["alpha@test"] / "skills", "do-work", "Changed before refresh.")
+    original_check = bridge.check_owned_tree
+    changed = False
+
+    def race_after_validation(path):
+        nonlocal changed
+        original_check(path)
+        if not changed and path.name == "alpha":
+            write_skill(roots["alpha@test"] / "skills", "do-work", "Changed during refresh.")
+            changed = True
+
+    monkeypatch.setattr(bridge, "check_owned_tree", race_after_validation)
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["status"] == "error"
+    assert "source changed during scaffold refresh" in result["message"]
+    assert (wrapper / "skills/do-work/SKILL.md").read_text() == prior_wrapper
+    assert (wrapper / "compatibility/do-work.json").read_text() == prior_report
+
+
+def test_source_change_between_discovery_and_analysis_is_rejected(bridge, tmp_path, monkeypatch):
+    env, _, roots = source_fixture(tmp_path)
+    original_discovery = bridge.installed_sources
+
+    def mutate_after_discovery(registry, personal):
+        sources, duplicates = original_discovery(registry, personal)
+        write_skill(roots["alpha@test"] / "skills", "do-work", "Changed after discovery.")
+        return sources, duplicates
+
+    monkeypatch.setattr(bridge, "installed_sources", mutate_after_discovery)
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+    assert result["status"] == "error"
+    assert "source changed during scaffold discovery" in result["message"]
+    generated = Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha"
+    assert not generated.exists()
+
+
+def test_invalid_local_inference_override_keeps_deterministic_report(bridge, tmp_path):
+    env, _, _ = source_fixture(tmp_path)
+    data_root = Path(env["CODEX_KIT_DATA_ROOT"])
+    data_root.mkdir(parents=True)
+    (data_root / "inference-config.json").write_text(json.dumps({
+        "inference": {"model": "gpt-5.6-sol", "effort": "unsupported"},
+    }))
+    registry = Path(env["CLAUDE_PLUGINS_REGISTRY"])
+    source_root = Path(json.loads(registry.read_text())["plugins"]["alpha@test"][0]["installPath"])
+    skill_path = source_root / "skills/do-work/SKILL.md"
+    skill_path.write_text(
+        "\n".join([
+            "---", "name: do-work", "description: test", "required_capabilities:",
+            "  - terminal.run", "---", "Requires a browser session to inspect pages.", "",
+        ]),
+        encoding="utf-8",
+    )
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+    assert result["status"] == "changed"
+    report_path = data_root / bridge.GENERATED_MARKETPLACE / "plugins/alpha/compatibility/do-work.json"
+    report = json.loads(report_path.read_text())
+    assert report["requirements"][0]["id"] == "terminal.run"
+    assert report["inference"]["status"] == "deferred"
+    assert report["inference"]["requested_model"] == "gpt-5.6-sol"
+    assert report["inference"]["requested_effort"] == "unsupported"
+
+
+def test_malformed_local_inference_config_keeps_deterministic_report(bridge, tmp_path):
+    env, _, _ = source_fixture(tmp_path)
+    data_root = Path(env["CODEX_KIT_DATA_ROOT"])
+    data_root.mkdir(parents=True)
+    (data_root / "inference-config.json").write_text("{malformed", encoding="utf-8")
+    registry = Path(env["CLAUDE_PLUGINS_REGISTRY"])
+    source_root = Path(json.loads(registry.read_text())["plugins"]["alpha@test"][0]["installPath"])
+    (source_root / "skills/do-work/SKILL.md").write_text(
+        "\n".join([
+            "---", "name: do-work", "required_capabilities:", "  - terminal.run", "---",
+            "Requires a browser session to inspect pages.", "",
+        ]), encoding="utf-8",
+    )
+
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+
+    assert result["status"] == "changed"
+    report_path = data_root / bridge.GENERATED_MARKETPLACE / "plugins/alpha/compatibility/do-work.json"
+    report = json.loads(report_path.read_text())
+    assert report["requirements"][0]["id"] == "terminal.run"
+    assert report["inference"]["status"] == "deferred"
+    assert "invalid compatibility JSON" in report["inference"]["reason"]
 
 
 def test_two_claude_marketplaces_with_same_plugin_name_skip_both(bridge, tmp_path):

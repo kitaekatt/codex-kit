@@ -36,6 +36,7 @@ class SkillSource:
     folder: str
     relative_path: str
     description: str
+    source_digest: str
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class PluginSource:
     identity: str
     kind: str
     skills: tuple[SkillSource, ...]
+    root: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -385,12 +387,33 @@ def skill_sources(root: Path, kind: str) -> tuple[SkillSource, ...]:
             raise BridgeError(f"invalid Claude skill folder name: {folder!r}")
         if folder in found:
             raise BridgeError(f"duplicate Claude skill folder name: {folder}")
-        fields = frontmatter_fields(path.read_text(encoding="utf-8"), path)
+        source_text = path.read_text(encoding="utf-8")
+        fields = frontmatter_fields(source_text, path)
         if not fields.get("name", "").strip():
             raise BridgeError(f"Claude skill has no name: {path}")
         description = fields.get("description", "").strip() or f"Forward to the canonical {folder} Claude skill."
-        found[folder] = SkillSource(folder, path.relative_to(root).as_posix(), description)
+        found[folder] = SkillSource(
+            folder, path.relative_to(root).as_posix(), description,
+            hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        )
     return tuple(found[name] for name in sorted(found))
+
+
+def plugin_skill_source(root: Path, folder: str) -> SkillSource | None:
+    """Resolve one conventional plugin skill without scanning unrelated siblings."""
+    candidate = root / "skills" / folder / "SKILL.md"
+    if candidate.is_file():
+        _safe_source_file(root, candidate)
+        source_text = candidate.read_text(encoding="utf-8")
+        fields = frontmatter_fields(source_text, candidate)
+        if not fields.get("name", "").strip():
+            raise BridgeError(f"Claude skill has no name: {candidate}")
+        description = fields.get("description", "").strip() or f"Forward to the canonical {folder} Claude skill."
+        return SkillSource(
+            folder, candidate.relative_to(root).as_posix(), description,
+            hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        )
+    return next((item for item in skill_sources(root, "plugin") if item.folder == folder), None)
 
 
 def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[PluginSource], list[str]]:
@@ -427,7 +450,7 @@ def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[Plugi
             continue
         selected = max(users, key=lambda record: str(record.get("installedAt", "")))
         root = Path(selected["installPath"]).expanduser().absolute()
-        sources.append(PluginSource(name, identity, "plugin", skill_sources(root, "plugin")))
+        sources.append(PluginSource(name, identity, "plugin", skill_sources(root, "plugin"), root))
         by_name.setdefault(name, []).append(identity)
     duplicates = sorted(name for name, identities in by_name.items() if len(identities) > 1)
     sources = [source for source in sources if source.name not in duplicates]
@@ -437,7 +460,7 @@ def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[Plugi
     sources = [source for source in sources if source.skills]
     personal = skill_sources(personal_skills, "personal")
     if personal:
-        sources.append(PluginSource("claude-user", "claude-user", "personal", personal))
+        sources.append(PluginSource("claude-user", "claude-user", "personal", personal, personal_skills))
     return sources, sorted(set(duplicates))
 
 
@@ -452,6 +475,7 @@ def render_skill(
     source: PluginSource,
     skill: SkillSource,
     override: dict[str, str] | None,
+    compatibility_report: Mapping[str, Any] | None = None,
 ) -> str:
     status = (override or {}).get("status", "supported")
     extra = (override or {}).get("instructions", "").strip()
@@ -465,6 +489,11 @@ def render_skill(
         f"    source-relative-path: {quote_yaml(skill.relative_path)}",
         f"    status: {status}",
     ]
+    if compatibility_report:
+        metadata.extend([
+            f"    compatibility-generation: {quote_yaml(str(compatibility_report.get('generation', '')))}",
+            f"    compatibility-report: {quote_yaml(f'compatibility/{skill.folder}.json')}",
+        ])
     header = "\n".join(
         ["---", f"name: {skill.folder}", f"description: {quote_yaml(skill.description)}", *metadata, "---"]
     )
@@ -474,7 +503,7 @@ def render_skill(
             "there. Do not load or interpret its canonical source."
         )
     else:
-        command = f"info {source.identity}" if source.kind == "plugin" else f"personal-info {skill.folder}"
+        command = f"info {source.identity} {skill.folder}" if source.kind == "plugin" else f"personal-info {skill.folder}"
         body = (
             "This is a generated forwarding skill; its canonical instructions remain in Claude's installation.\n\n"
             "First load the installed Codex gateway skill `claude-plugins-kit:claude-plugins` and follow its runtime "
@@ -483,6 +512,11 @@ def render_skill(
             "For references to other skills, follow the runtime contract's skill-dependency procedure "
             "before reading their SKILL.md files."
         )
+        if compatibility_report:
+            body += (
+                " Compatibility reports are scaffold-time evidence and may be stale; "
+                "runtime disclosures are advisory and never block this skill."
+            )
     if extra:
         body += f"\n\nCodex compatibility instructions: {extra}"
     return f"{header}\n\n{body}\n"
@@ -498,14 +532,18 @@ def override_for(
 
 
 def rendered_plugin(
-    source: PluginSource, overrides: Mapping[tuple[str, str], dict[str, str]]
+    source: PluginSource, overrides: Mapping[tuple[str, str], dict[str, str]],
+    compatibility_reports: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[dict[str, str], str]:
     skills = {
         f"skills/{skill.folder}/SKILL.md": render_skill(
-            source, skill, override_for(overrides, source, skill.folder)
+            source, skill, override_for(overrides, source, skill.folder),
+            (compatibility_reports or {}).get(skill.folder),
         )
         for skill in source.skills
     }
+    for skill_name, report in (compatibility_reports or {}).items():
+        skills[f"compatibility/{skill_name}.json"] = json.dumps(report, indent=2, sort_keys=True) + "\n"
     digest = hashlib.sha256(
         (source.identity + "\0" + "".join(f"{path}\0{content}" for path, content in sorted(skills.items()))).encode()
     ).hexdigest()
@@ -786,6 +824,24 @@ def sync(
             registry, personal = claude_paths(env)
             overrides = load_overrides(paths.overrides_file)
             sources, duplicates = installed_sources(registry, personal)
+            compatibility = _compatibility_module()
+            profile, mappings = compatibility.load_capability_documents(paths.bridge_root, paths.data_root)
+            try:
+                inference_policy = compatibility.load_inference_policy(paths.data_root)
+            except compatibility.CompatibilityError as exc:
+                # Keep deterministic findings and defer inference without a model fallback.
+                try:
+                    raw_config = compatibility._read_json(paths.data_root / "inference-config.json", {})
+                except compatibility.CompatibilityError:
+                    raw_config = {}
+                raw_selection = raw_config.get("inference", {}) if isinstance(raw_config, dict) else {}
+                if not isinstance(raw_selection, dict):
+                    raw_selection = {}
+                inference_policy = {
+                    "requested_model": raw_selection.get("model", compatibility.DEFAULT_MODEL),
+                    "requested_effort": raw_selection.get("effort", compatibility.DEFAULT_EFFORT),
+                    "error": str(exc),
+                }
             state = load_state(paths)
             installed = installed_plugins(runner)
             marketplaces = configured_marketplaces(runner)
@@ -843,7 +899,39 @@ def sync(
             desired_sources = [source for source in sources if source.name not in skipped and source.name not in disabled]
             rendered: dict[str, tuple[dict[str, str], str, PluginSource]] = {}
             for source in desired_sources:
-                files, digest = rendered_plugin(source, overrides)
+                if source.root is None:
+                    raise BridgeError(f"Claude source root is unavailable: {source.identity}")
+                reports: dict[str, Mapping[str, Any]] = {}
+                for skill in source.skills:
+                    source_file = source.root / skill.relative_path
+                    _safe_source_file(source.root, source_file)
+                    text = source_file.read_text(encoding="utf-8")
+                    if hashlib.sha256(text.encode("utf-8")).hexdigest() != skill.source_digest:
+                        raise BridgeError(
+                            f"Claude skill source changed during scaffold discovery: {source.identity}/{skill.folder}"
+                        )
+                    if inference_policy.get("error"):
+                        report = compatibility.make_report(
+                            source_identity=source.identity, skill_path=skill.relative_path,
+                            source_digest=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                            requirements=compatibility.resolve_requirements(
+                                compatibility.extract_requirements(text), profile, mappings
+                            ),
+                            inference={
+                                "status": "deferred", "requested_model": inference_policy["requested_model"],
+                                "requested_effort": inference_policy["requested_effort"], "actual_model": None,
+                                "actual_effort": None, "reason": inference_policy["error"],
+                            },
+                            profile=profile, mappings=mappings,
+                        )
+                    else:
+                        report = compatibility.analyze_skill(
+                            text, source_identity=source.identity, skill_path=skill.relative_path,
+                            data_root=paths.data_root, policy=inference_policy, profile=profile,
+                            mappings=mappings, allow_inference=install, cache_enabled=install,
+                        )
+                    reports[skill.folder] = report
+                files, digest = rendered_plugin(source, overrides, reports)
                 rendered[source.name] = (files, digest, source)
 
             existing_owned = {
@@ -893,6 +981,16 @@ def sync(
             ensure_marketplace_root(paths)
             next_state = {"schema": STATE_SCHEMA, "plugins": dict(state["plugins"])}
             for name in source_changes:
+                source = rendered[name][2]
+                assert source.root is not None
+                for skill in source.skills:
+                    report = json.loads(rendered[name][0][f"compatibility/{skill.folder}.json"])
+                    current = (source.root / skill.relative_path).read_text(encoding="utf-8")
+                    current_digest = hashlib.sha256(current.encode("utf-8")).hexdigest()
+                    if current_digest != report["source"]["digest"]:
+                        raise BridgeError(
+                            f"Claude skill source changed during scaffold refresh: {source.identity}/{skill.folder}"
+                        )
                 replace_owned_tree(paths.plugins_root / name, rendered[name][0])
                 _, digest, source = rendered[name]
                 previous = next_state["plugins"].get(name, {})
@@ -984,7 +1082,7 @@ def sync(
                 "skipped": skipped,
                 "disabled": sorted(disabled),
             }
-        except (BridgeError, OSError, UnicodeError) as exc:
+        except (BridgeError, OSError, UnicodeError, ValueError) as exc:
             return {
                 "status": "error",
                 "changed": False,
@@ -1046,10 +1144,110 @@ def claude_data_root(env: Mapping[str, str]) -> Path:
     return Path(configured).expanduser().absolute() if configured else Path.home() / ".claude" / "plugins" / "data"
 
 
-def runtime_info(plugin: str, env: Mapping[str, str]) -> dict[str, Any]:
+_DISCLOSED_COMPATIBILITY: set[tuple[str, str, str, str]] = set()
+
+
+def _runtime_compatibility(plugin_name: str, source_root: Path, env: Mapping[str, str],
+                           *, kind: str, source_identity: str,
+                           selected_skill: str | None = None) -> dict[str, Any]:
+    try:
+        compatibility = _compatibility_module()
+        paths = paths_for(env)
+    except (BridgeError, OSError, UnicodeError, ValueError) as exc:
+        finding = f"Compatibility checks are unavailable ({exc}); normal skill execution continues."
+        print(f"Claude Plugins Kit compatibility: {plugin_name}: {finding}", file=sys.stderr)
+        return {"reports": [], "findings": [finding], "advisory": True}
+    wrapper_root = paths.plugins_root / plugin_name
+    config_finding: str | None = None
+    try:
+        profile, mappings = compatibility.load_capability_documents(paths.bridge_root, paths.data_root)
+    except (compatibility.CompatibilityError, OSError) as exc:
+        profile, mappings = {}, {}
+        config_finding = f"Capability profile or mappings are unavailable ({exc}); normal skill execution continues."
+    scan_finding: str | None = None
+    try:
+        skills = skill_sources(source_root, kind)
+    except (BridgeError, OSError, UnicodeError) as exc:
+        skills = ()
+        scan_finding = f"Skill source scan failed ({exc}); normal skill execution continues."
+    results: list[dict[str, Any]] = []
+    disclosures: list[str] = []
+    for skill in skills:
+        if selected_skill and skill.folder != selected_skill:
+            continue
+        report_path = wrapper_root / "compatibility" / f"{skill.folder}.json"
+        try:
+            report = read_json(report_path, "compatibility report") if report_path.is_file() and not report_path.is_symlink() else None
+        except BridgeError:
+            report = None
+        try:
+            source_file = source_root / skill.relative_path
+            _safe_source_file(source_root, source_file)
+            source_text = source_file.read_text(encoding="utf-8")
+            source_digest = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+        except (OSError, UnicodeError):
+            source_digest = "unavailable"
+        findings = compatibility.advisory_findings(
+            report, source_digest=source_digest, profile=profile, mappings=mappings,
+            source_identity=source_identity, skill_path=skill.relative_path,
+        )
+        if config_finding:
+            findings.insert(0, config_finding)
+        if scan_finding:
+            findings.insert(0, scan_finding)
+        results.append({
+            "skill": skill.folder,
+            "generation": report.get("generation") if isinstance(report, dict) else None,
+            "findings": findings,
+        })
+        for finding in findings:
+            finding_key = hashlib.sha256(
+                f"{plugin_name}\0{skill.folder}\0{report_path}\0{report.get('generation') if isinstance(report, dict) else 'missing'}\0{finding}".encode()
+            ).hexdigest()
+            session = env.get("CODEX_SESSION_ID") or env.get("CODEX_THREAD_ID")
+            dedupe_key = (str(paths.data_root), session or "", skill.folder, finding_key)
+            should_disclose = dedupe_key not in _DISCLOSED_COMPATIBILITY
+            if session:
+                try:
+                    disclosure_file = paths.data_root / "compatibility-disclosures.json"
+                    disclosure_lock = paths.data_root / ".compatibility-disclosures.lock"
+                    if disclosure_file.is_symlink() or disclosure_lock.is_symlink():
+                        raise BridgeError("compatibility disclosure state cannot be a symlink")
+                    with FileLock(disclosure_lock):
+                        state = read_json(disclosure_file, "compatibility disclosure state") if disclosure_file.exists() else {"schema": 1, "sessions": {}}
+                        if not isinstance(state, dict) or state.get("schema") != 1 or not isinstance(state.get("sessions"), dict):
+                            state = {"schema": 1, "sessions": {}}
+                        session_key = hashlib.sha256(session.encode("utf-8")).hexdigest()
+                        shown = state["sessions"].get(session_key, [])
+                        if not isinstance(shown, list) or any(not isinstance(item, str) for item in shown):
+                            shown = []
+                            state["sessions"][session_key] = shown
+                        should_disclose = finding_key not in shown
+                        if should_disclose:
+                            state["sessions"][session_key] = [*shown, finding_key][-256:]
+                            state["sessions"] = dict(list(state["sessions"].items())[-64:])
+                            atomic_write(disclosure_file, json.dumps(state, indent=2, sort_keys=True) + "\n")
+                except (BridgeError, OSError, UnicodeError):
+                    should_disclose = dedupe_key not in _DISCLOSED_COMPATIBILITY
+            if should_disclose:
+                _DISCLOSED_COMPATIBILITY.add(dedupe_key)
+                disclosures.append(f"{plugin_name}/{skill.folder}: {finding}")
+    if scan_finding:
+        results.append({"skill": selected_skill, "generation": None, "findings": [scan_finding]})
+        disclosures.append(f"{plugin_name}: {scan_finding}")
+    for message in disclosures:
+        print(f"Claude Plugins Kit compatibility: {message}", file=sys.stderr)
+    return {"reports": results, "advisory": bool(disclosures)}
+
+
+def runtime_info(plugin: str, env: Mapping[str, str], skill: str | None = None) -> dict[str, Any]:
+    if skill is not None and not SKILL_NAME_RE.fullmatch(skill):
+        raise BridgeError(f"invalid skill folder: {skill!r}")
     identity, record = installed_record(plugin, env)
     name, marketplace = identity.split("@", 1)
     root = Path(record["installPath"]).expanduser().resolve()
+    if skill is not None and plugin_skill_source(root, skill) is None:
+        raise BridgeError(f"skill source is missing from Claude plugin {identity}: {skill}")
     plugin_data = claude_data_root(env) / marketplace / name
     declared = env.get(f"{env_stem(name)}_VENV")
     candidates = ([Path(declared).expanduser()] if declared else []) + [
@@ -1057,7 +1255,7 @@ def runtime_info(plugin: str, env: Mapping[str, str]) -> dict[str, Any]:
         plugin_data / ".venv" / "Scripts" / "python.exe",
     ]
     python = next((candidate.absolute() for candidate in candidates if candidate.is_file()), None)
-    return {
+    result = {
         "plugin": identity,
         "source_root": str(root),
         "source_exists": root.is_dir(),
@@ -1065,6 +1263,10 @@ def runtime_info(plugin: str, env: Mapping[str, str]) -> dict[str, Any]:
         "python": str(python) if python else None,
         "python_exists": python is not None,
     }
+    result["compatibility"] = _runtime_compatibility(
+        name, root, env, kind="plugin", source_identity=identity, selected_skill=skill,
+    )
+    return result
 
 
 def personal_info(skill: str, env: Mapping[str, str]) -> dict[str, Any]:
@@ -1073,7 +1275,12 @@ def personal_info(skill: str, env: Mapping[str, str]) -> dict[str, Any]:
     root = claude_paths(env)[1]
     source = root / skill / "SKILL.md"
     _safe_source_file(root, source)
-    return {"skill": skill, "source_root": str(root), "source_file": str(source)}
+    result = {"skill": skill, "source_root": str(root), "source_file": str(source)}
+    result["compatibility"] = _runtime_compatibility(
+        "claude-user", root, env, kind="personal", source_identity="claude-user",
+        selected_skill=skill,
+    )
+    return result
 
 
 def resolve_script(root: Path, value: str) -> Path:
@@ -1200,6 +1407,22 @@ def _migration_module() -> Any:
     return module
 
 
+def _compatibility_module() -> Any:
+    path = Path(__file__).resolve().with_name("compatibility.py")
+    spec = importlib.util.spec_from_file_location("codex_kit_compatibility", path)
+    if spec is None or spec.loader is None:
+        raise BridgeError(f"cannot load compatibility module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+    return module
+
+
 def maintain(*, env: Mapping[str, str], runner: Runner, script: Path | None = None,
              check_updates: bool = False) -> dict[str, Any]:
     """Converge the installed consumer plugin without a fleet bootstrap dependency."""
@@ -1255,6 +1478,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     migrate_parser.add_argument("--install", action="store_true")
     info_parser = subparsers.add_parser("info")
     info_parser.add_argument("plugin")
+    info_parser.add_argument("skill", nargs="?")
     personal_parser = subparsers.add_parser("personal-info")
     personal_parser.add_argument("skill")
     python_parser = subparsers.add_parser("python")
@@ -1291,7 +1515,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.command == "info":
             if passthrough:
                 parser.error("unrecognized info arguments: " + " ".join(passthrough))
-            print(json.dumps(runtime_info(arguments.plugin, env), indent=2, sort_keys=True))
+            print(json.dumps(runtime_info(arguments.plugin, env, arguments.skill), indent=2, sort_keys=True))
             return 0
         if arguments.command == "personal-info":
             if passthrough:

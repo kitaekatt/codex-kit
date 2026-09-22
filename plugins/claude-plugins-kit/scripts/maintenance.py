@@ -54,7 +54,12 @@ def release_candidate(bridge: Any, marketplace: Mapping[str, Any]) -> tuple[Path
     if manifest.get("name") != "claude-plugins-kit" or (candidate / "plugin.json").exists() or (candidate / "plugin.json").is_symlink():
         raise ValueError("bridge release has an invalid or hook-shadowing manifest")
     release_version(manifest.get("version"))
-    for relative_file in ("scripts/launch.sh", "scripts/launch.cmd", "scripts/bridge.py", "scripts/maintenance.py", "scripts/migration.py", "hooks/hooks.json", "skills/claude-plugins/SKILL.md"):
+    for relative_file in (
+        "scripts/launch.sh", "scripts/launch.cmd", "scripts/bridge.py",
+        "scripts/compatibility.py", "scripts/maintenance.py", "scripts/migration.py",
+        "capability-profile.json", "capability-mappings.json", "hooks/hooks.json",
+        "skills/claude-plugins/SKILL.md",
+    ):
         path = migration._safe_descendant(candidate / relative_file, root, "bridge release payload")
         migration._require_regular(path, "bridge release payload")
     return candidate, manifest
