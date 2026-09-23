@@ -197,7 +197,7 @@
   },
   "git-kit@plugins-kit/git-code-review": {
     "status": "adapted",
-    "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation. Translate Agent, Workflow, AskUserQuestion, and Claude reviewer types; preserve review data locations."
+    "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation. Translate Agent, Workflow, AskUserQuestion, and Claude reviewer types; preserve review data locations. When md-domain Workflow is unavailable or rejects an installed detect script, follow the installed manual-detect contract through the configured llm-scripting-kit CLI: send each file's exact instantiated lanePrompt and FILE_FINDINGS_SCHEMA from that script, request one JSON object, and preserve the lane's model and effort. For the review-mode skill-detect lane, use the opus endpoint with --model opus --effort high. Validate each response against the installed schema, then apply the installed reducer and totals calculation with the original claimed-file inputs. Preparation alone, an unavailable model/effort pin, or a missing or invalid response means REVIEW INCOMPLETE."
   },
   "hue-kit@plugins-kit/hue-domain": {
     "status": "adapted",
