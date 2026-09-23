@@ -3,4 +3,5 @@ __pycache__/
 *.py[cod]
 .venv/
 .claude/bootstrap.local.json
+/.codex/
 .venv.sync.sha256
