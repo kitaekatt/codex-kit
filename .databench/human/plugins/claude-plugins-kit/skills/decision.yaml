@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "directory": "plugins/claude-plugins-kit/hooks",
+  "directory": "plugins/claude-plugins-kit/skills",
   "decision": "none",
-  "source_sha": "973727c64b172962fa44f1912fe2dc7a4b641b3c",
+  "source_sha": "946cc157123f727ca4439ca548ff6fe6d1ebea22",
   "dirty": false,
   "identity": "",
   "instructions": "",

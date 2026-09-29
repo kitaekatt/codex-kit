@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "directory": "tests",
+  "decision": "page",
+  "source_sha": "946cc157123f727ca4439ca548ff6fe6d1ebea22",
+  "generation_spec_sha256": "0805933a1de089dc951a33d702e9d57d569f0584732b017cd3600742a34ba321",
+  "dirty": false,
+  "identity": "Pytest suite for the claude-plugins-kit bridge, compatibility analysis, migration, maintenance, runtime, and native Codex lifecycle.",
+  "instructions": "",
+  "references": []
+}

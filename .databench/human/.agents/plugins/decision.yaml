@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "directory": "plugins/claude-plugins-kit/hooks",
+  "directory": ".agents/plugins",
   "decision": "none",
-  "source_sha": "973727c64b172962fa44f1912fe2dc7a4b641b3c",
+  "source_sha": "d3ba1d0b4068f693ab37e0fc3f3f63af008ba9b5",
   "dirty": false,
   "identity": "",
   "instructions": "",
