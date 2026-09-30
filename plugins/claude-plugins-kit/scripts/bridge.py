@@ -21,6 +21,7 @@ BRIDGE_ID = "claude-plugins-kit"
 GENERATED_MARKETPLACE = "claude-plugins-kit-generated"
 OWNER_FILE = ".claude-plugins-kit-owner.json"
 STATE_SCHEMA = 1
+USER_CONFIG_NAME = "claude-plugins-kit.json"
 PLUGIN_NAME_RE = re.compile(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\Z")
 MARKETPLACE_NAME_RE = re.compile(r"[A-Za-z0-9_-]+\Z")
 SKILL_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\Z")
@@ -46,6 +47,7 @@ class PluginSource:
     kind: str
     skills: tuple[SkillSource, ...]
     root: Path | None = None
+    wrap: bool = True
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ class Paths:
     state_file: Path
     lock_file: Path
     overrides_file: Path
+    user_config_file: Path
 
 
 class Runner:
@@ -179,6 +182,7 @@ def paths_for(env: Mapping[str, str], script: Path | None = None) -> Paths:
         state_file=data_root / "state.json",
         lock_file=data_root / ".sync.lock",
         overrides_file=bridge_root / "compatibility-overrides.json",
+        user_config_file=Path(env.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser().absolute() / USER_CONFIG_NAME,
     )
     validate_managed_paths(paths)
     return paths
@@ -327,6 +331,22 @@ def load_overrides(path: Path) -> dict[tuple[str, str], dict[str, str]]:
     return result
 
 
+def load_user_config(path: Path) -> set[str]:
+    """Load user-selected Claude plugin identities that must not be wrapped."""
+    if not path.is_file():
+        return set()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise BridgeError(f"invalid Claude Plugins Kit user config: {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise BridgeError("Claude Plugins Kit user config must be an object")
+    excluded = raw.get("excluded_plugins", [])
+    if not isinstance(excluded, list) or any(not isinstance(item, str) or not item for item in excluded):
+        raise BridgeError("Claude Plugins Kit user config excluded_plugins must be a list of non-empty strings")
+    return set(excluded)
+
+
 def _safe_source_file(root: Path, path: Path) -> None:
     probe = root
     for part in path.relative_to(root).parts:
@@ -450,7 +470,21 @@ def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[Plugi
             continue
         selected = max(users, key=lambda record: str(record.get("installedAt", "")))
         root = Path(selected["installPath"]).expanduser().absolute()
-        sources.append(PluginSource(name, identity, "plugin", skill_sources(root, "plugin"), root))
+        wrap = True
+        manifest = root / ".claude-plugin" / "plugin.json"
+        if manifest.is_file():
+            try:
+                document = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise BridgeError(f"invalid Claude plugin manifest: {manifest}: {exc}") from exc
+            if not isinstance(document, dict):
+                raise BridgeError(f"Claude plugin manifest must be an object: {manifest}")
+            codex_policy = document.get("codex-kit")
+            if codex_policy is not None:
+                if not isinstance(codex_policy, dict) or not isinstance(codex_policy.get("wrap", True), bool):
+                    raise BridgeError(f"invalid codex-kit policy in Claude plugin manifest: {manifest}")
+                wrap = codex_policy.get("wrap", True)
+        sources.append(PluginSource(name, identity, "plugin", skill_sources(root, "plugin"), root, wrap))
         by_name.setdefault(name, []).append(identity)
     duplicates = sorted(name for name, identities in by_name.items() if len(identities) > 1)
     sources = [source for source in sources if source.name not in duplicates]
@@ -823,6 +857,7 @@ def sync(
         try:
             registry, personal = claude_paths(env)
             overrides = load_overrides(paths.overrides_file)
+            excluded = load_user_config(paths.user_config_file)
             sources, duplicates = installed_sources(registry, personal)
             compatibility = _compatibility_module()
             profile, mappings = compatibility.load_capability_documents(paths.bridge_root, paths.data_root)
@@ -889,7 +924,15 @@ def sync(
                     for record in installed_by_name.get(source.name, [])
                 )
             )
-            skipped = sorted(set(duplicates) | set(native_collisions))
+            configured_exclusions = sorted(
+                source.name for source in sources
+                if source.identity in excluded or source.name in excluded
+            )
+            manifest_exclusions = sorted(source.name for source in sources if not source.wrap)
+            skipped = sorted(
+                set(duplicates) | set(native_collisions)
+                | set(configured_exclusions) | set(manifest_exclusions)
+            )
             disabled = {
                 source.name for source in sources
                 if respect_disabled and source.name in owned_installed
@@ -1068,8 +1111,14 @@ def sync(
                 if changed
                 else "Claude wrapper plugins are current."
             )
-            if skipped:
-                message += " Skipped collisions: " + ", ".join(skipped) + "."
+            if configured_exclusions:
+                message += " Skipped by user configuration: " + ", ".join(configured_exclusions) + "."
+            if manifest_exclusions:
+                message += " Skipped by plugin metadata: " + ", ".join(manifest_exclusions) + "."
+            collision_skips = sorted(set(skipped) - set(configured_exclusions))
+            collision_skips = sorted(set(collision_skips) - set(manifest_exclusions))
+            if collision_skips:
+                message += " Skipped collisions: " + ", ".join(collision_skips) + "."
             if disabled:
                 message += " Left disabled plugins unchanged: " + ", ".join(sorted(disabled)) + "."
             return {

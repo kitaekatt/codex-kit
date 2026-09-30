@@ -218,6 +218,34 @@ def test_initial_sync_generates_forwarders_and_installs_native_plugins(bridge, t
     assert ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}", "--json") in runner.calls
 
 
+def test_user_config_excludes_plugin_before_wrapper_generation(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path, ("claude-ui-kit@plugins-kit",))
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "claude-plugins-kit.json").write_text(
+        json.dumps({"excluded_plugins": ["claude-ui-kit@plugins-kit"]}), encoding="utf-8"
+    )
+    env["CODEX_HOME"] = str(codex_home)
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+    assert result["status"] == "changed", result
+    assert result["skipped"] == ["claude-ui-kit"]
+    assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "claude-ui-kit").exists()
+    assert roots["claude-ui-kit@plugins-kit"].exists()
+
+
+def test_plugin_metadata_excludes_wrapper_without_user_config(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path, ("claude-ui-kit@plugins-kit",))
+    (roots["claude-ui-kit@plugins-kit"] / ".claude-plugin").mkdir()
+    (roots["claude-ui-kit@plugins-kit"] / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "claude-ui-kit", "codex-kit": {"wrap": False}}), encoding="utf-8"
+    )
+    env["CODEX_HOME"] = str(tmp_path / "codex-home-without-guidance")
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+    assert result["status"] == "changed", result
+    assert result["skipped"] == ["claude-ui-kit"]
+    assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "claude-ui-kit").exists()
+
+
 def test_native_plugin_collision_wins_without_native_mutation(bridge, tmp_path):
     env, _, _ = source_fixture(tmp_path)
     native = installed_record("alpha", "native-market")
