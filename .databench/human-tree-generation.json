@@ -1,10 +1,8 @@
 {
-  "schema_version": 1,
-  "run_key": "a828d0d14cedc6c9c17379ff442bf09b84af2f11963e1a9f99f6ff800c0edecf",
-  "state": "complete",
-  "finished": [
-    "plugins/claude-plugins-kit/scripts",
-    "plugins/claude-plugins-kit",
-    "tests"
-  ]
+  "schema_version": 2,
+  "state": "in-progress",
+  "finished": {
+    "plugins/claude-plugins-kit/scripts": "ef98a10b5e0b1a36839a710ab56229b1447b4a5a8e4f7cef3f42ef2e0368af47",
+    "plugins/claude-plugins-kit": "bed1532b45c8d4f61b03d10312880e79989405f17669a9b6fcae1dac4ea1b0bd"
+  }
 }

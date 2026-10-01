@@ -388,47 +388,11 @@ svg {
 </style>
 </head>
 <body>
-<nav data-human-html-chrome="nav" aria-label="Orientation pages">
-  <ul>
-    <li><a href="scripts/index.html"><span class="hh-nav-label">scripts</span> <span class="hh-nav-identity">Claude Plugins Kit scripts: Claude-to-Codex bridge, launcher, private Python runtime, compatibility analysis, maintenance, and migration.</span></a></li>
-  </ul>
-</nav>
 <main>
 <h1>Claude Plugins Kit package that forwards installed Claude Code skills to Codex without copying instructions, including its manifest, startup hook, skill documentation, and compatibility data.</h1>
-<p>This directory is the Claude Plugins Kit, a Codex plugin that exposes user-installed Claude Code plugin skills and personal skills to Codex by generating a thin forwarding plugin for each skill instead of copying the canonical instructions. At the top level, the package manifest declares what the plugin is, a session-start hook keeps the generated bridge maintained, and one skill folder carries the human-facing documentation of how the bridge behaves. The remaining top-level files are compatibility data: the host capability profile, the equivalence mapping table, and a curated override for every known installed skill. Everything the bridge executes -- the launcher, maintenance, and migration -- sits one level down, behind the card at the top of this page.</p>
-<h2>Where to start</h2>
-<p>Open <a href="skills/claude-plugins/SKILL.md"><code>skills/claude-plugins/SKILL.md</code></a> first: it is the skill Codex loads when you ask to explain, refresh, troubleshoot, or remove the bridge, and it decides which reference document you need next. The launcher and the bridge's maintain, sync, and migrate machinery are behind the scripts card above.</p>
-<h2>Routes</h2>
-<ul>
-  <li><strong>Resolve a forwarded skill</strong>: read the forwarding wrapper, then the launcher's <code>info</code> for the plugin and skill folder, then the canonical skill's instructions under the returned source root.</li>
-  <li><strong>Refresh the generated catalog</strong>: the launcher's <code>sync --install</code> after a Claude-side change; if a reported catalog change is not visible, start a new Codex thread.</li>
-  <li><strong>Retire the old standalone bridge</strong>: the launcher's <code>migrate</code> to preview, then <code>migrate --install</code> to apply; if an operation stops, rerun the same command.</li>
-</ul>
-<h2>The package manifest</h2>
-<ul>
-  <li><a href=".codex-plugin/plugin.json"><code>.codex-plugin/plugin.json</code></a> -- the Codex manifest: plugin name and version, the skill entry, category, display text, and default prompts. Open it when you change what the plugin advertises itself to be.</li>
-</ul>
-<h2>Session startup</h2>
-<ul>
-  <li><a href="hooks/hooks.json"><code>hooks/hooks.json</code></a> -- the SessionStart hook that runs the launcher's maintain step on startup and resume, with a 300-second timeout. Open it when the bridge maintains at the wrong time, or not at all.</li>
-</ul>
-<h2>The gateway skill</h2>
-<ul>
-  <li><a href="skills/claude-plugins/SKILL.md"><code>skills/claude-plugins/SKILL.md</code></a> -- the entry skill that explains, refreshes, troubleshoots, or removes the bridge and points to the two references. Open it when a forwarded skill is missing, stale, blocked by a native plugin, or cannot resolve its source.</li>
-  <li><a href="skills/claude-plugins/references/runtime.md"><code>skills/claude-plugins/references/runtime.md</code></a> -- the runtime contract: how a forwarded skill resolves its canonical Claude source, what the launcher's <code>info</code> and <code>python</code> commands return, and how compatibility reports and caches behave. Open it for questions about resolution, capability reporting, or running a skill's bundled scripts.</li>
-  <li><a href="skills/claude-plugins/references/maintenance.md"><code>skills/claude-plugins/references/maintenance.md</code></a> -- the lifecycle reference: Claude source discovery order, the generated data root, catalog sync, update cadence, and migrating an older standalone bridge. Open it for questions about refresh, collision, update, or removal.</li>
-</ul>
-<h2>Compatibility data</h2>
-<ul>
-  <li><a href="compatibility-overrides.json"><code>compatibility-overrides.json</code></a> -- the curated table of known installed skills: one status per skill -- supported, adapted, or claude-only -- plus the Codex-side instructions to apply. Open it to see how a specific skill is treated, or to add an override for one that misbehaves.</li>
-  <li><a href="capability-profile.json"><code>capability-profile.json</code></a> -- the shipped host capability profile for the Codex host; currently an empty list. A user-local file with the same name under the bridge data root overrides it; open it when capability reporting looks wrong.</li>
-  <li><a href="capability-mappings.json"><code>capability-mappings.json</code></a> -- the shipped equivalence mapping between Claude requirements and Codex capabilities; currently an empty list, overridable the same way. Open it when you add a mapping.</li>
-</ul>
-<h2>Runtime notes</h2>
-<ul>
-  <li><a href="RUNTIME-NOTICES.md"><code>RUNTIME-NOTICES.md</code></a> -- provenance and licensing for the pinned CPython 3.13.15 fallback: the digests that were checked, the supported platforms, and what the MIT license does and does not cover. Open it before you update the runtime pin.</li>
-</ul>
+<p class="hh-orientation">Claude Plugins Kit is the Codex-side package that exposes installed Claude Code plugins and personal skills as local forwarding plugins. It does not copy Claude instructions; it generates wrappers that point back to the canonical skill sources. The package is organized around a manifest, a startup hook, a gateway skill, and compatibility data.</p><section><h2>Where to start</h2><p>Open <a href="skills/claude-plugins/SKILL.md">plugins/claude-plugins-kit/skills/claude-plugins/SKILL.md</a> first. It states the gateway&#x27;s scope, points to the two references, and sets the rule that a missing or blocked forwarded skill must be reported, not bypassed.</p></section><section><h2>Manifest and startup</h2><ul><li><a href=".codex-plugin/plugin.json">plugins/claude-plugins-kit/.codex-plugin/plugin.json</a> is the Codex plugin manifest: name, version, display metadata, and the skills directory.</li><li><a href="hooks/hooks.json">plugins/claude-plugins-kit/hooks/hooks.json</a> starts maintenance on startup or resume by delegating to the package launcher.</li></ul></section><section><h2>Skill documentation</h2><ul><li><a href="skills/claude-plugins/references/runtime.md">plugins/claude-plugins-kit/skills/claude-plugins/references/runtime.md</a> explains how a forwarded skill resolves its canonical Claude source, translates paths, checks compatibility reports, and dispatches Python scripts.</li><li><a href="skills/claude-plugins/references/maintenance.md">plugins/claude-plugins-kit/skills/claude-plugins/references/maintenance.md</a> covers discovery order, generated state locations, synchronization, update checks, removal, and migration from the old standalone bridge.</li></ul></section><section><h2>Compatibility data</h2><ul><li><a href="compatibility-overrides.json">plugins/claude-plugins-kit/compatibility-overrides.json</a> holds per-skill adaptation notes: supported, adapted, or Claude-only behavior for the forwarded catalog.</li><li><a href="capability-profile.json">plugins/claude-plugins-kit/capability-profile.json</a> is the Codex host capability profile used by compatibility reports.</li><li><a href="capability-mappings.json">plugins/claude-plugins-kit/capability-mappings.json</a> maps requirements to host capabilities; the shipped file is empty at version 1.</li></ul></section><section><h2>Runtime notices</h2><p><a href="RUNTIME-NOTICES.md">plugins/claude-plugins-kit/RUNTIME-NOTICES.md</a> records the pinned private Python fallback, its provenance and licenses, and the platform primitives required before the fallback can run.</p></section>
 </main>
+<nav data-human-html-chrome="nav"><ul><li><a href="scripts/index.html"><span class="hh-nav-label">scripts</span> <span class="hh-nav-identity">Claude Plugins Kit scripts: bridge Claude plugins into Codex, launch across platforms with a private Python fallback, analyze skill compatibility, auto-update the plugin, and migrate from the retired standalone bridge.</span></a></li></ul></nav>
 <script>
 if (window.parent !== window) {
   window.parent.postMessage({

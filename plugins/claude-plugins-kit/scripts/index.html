@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-<!-- human-html: {"generated_by":"md-domain","source_sha":"946cc157123f727ca4439ca548ff6fe6d1ebea22","directory":"plugins/claude-plugins-kit/scripts","kind":"page"} -->
+<!-- human-html: {"generated_by":"md-domain","source_sha":"f19c3328dac9cd5a9d0ada7440c7b936f82fb5c7","directory":"plugins/claude-plugins-kit/scripts","kind":"page"} -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Claude Plugins Kit scripts: Claude-to-Codex bridge, launcher, private Python runtime, compatibility analysis, maintenance, and migration.</title>
+<title>Claude Plugins Kit scripts: bridge Claude plugins into Codex, launch across platforms with a private Python fallback, analyze skill compatibility, auto-update the plugin, and migrate from the retired standalone bridge.</title>
 <style data-human-html-style>
 /* human-html shared style asset -- SA-1.
  *
@@ -388,56 +388,11 @@ svg {
 </style>
 </head>
 <body>
-<nav data-human-html-chrome="nav" aria-label="Orientation pages">
-  <ul>
-    <li><a href="../index.html"><span class="hh-nav-label">claude-plugins-kit</span> <span class="hh-nav-identity">Claude Plugins Kit package that forwards installed Claude Code skills to Codex without copying instructions, including its manifest, startup hook, skill documentation, and compatibility data.</span></a></li>
-  </ul>
-</nav>
 <main>
-<h1>Claude Plugins Kit scripts: Claude-to-Codex bridge, launcher, private Python runtime, compatibility analysis, maintenance, and migration.</h1>
-<p>This directory is the executable core of the Claude Plugins Kit package: the code that keeps installed Claude Code skills usable from Codex. It is organized as thin platform launchers around one Python engine, with runtime provisioning and lifecycle modules beside it. The launchers exist only to find a suitable interpreter and hand every argument to the bridge module, so one command line works on Windows and POSIX alike. A private, hash-pinned Python interpreter is installed only when a machine has no Python 3.10 or better of its own. Every managed path is checked for symlinks and Git worktrees before anything is read or written, because the data root sits outside the repository.</p>
-
-<h2>Where to start</h2>
-<p>Open <a href="bridge.py"><code>bridge.py</code></a> first: the launchers, the maintenance check, and the migration all converge on its command surface, and its docstring and error types state what the whole directory does. If a machine fails before the bridge even starts, the launcher and runtime entries below are the first stop.</p>
-
-<h2>Routes</h2>
-<ul>
-<li>Cold start: <a href="launch.cmd"><code>launch.cmd</code></a> through <a href="launch.ps1"><code>launch.ps1</code></a>, or <a href="launch.sh"><code>launch.sh</code></a> directly, -> <a href="runtime.sh"><code>runtime.sh</code></a> or <a href="runtime.ps1"><code>runtime.ps1</code></a> (fallback only) -> <a href="bridge.py"><code>bridge.py</code></a></li>
-<li>Private runtime install: <a href="runtime.sh"><code>runtime.sh</code></a> or <a href="runtime.ps1"><code>runtime.ps1</code></a> -> <a href="runtime-assets.tsv"><code>runtime-assets.tsv</code></a> -> the pinned CPython archive, verified by its SHA256 before it is extracted</li>
-<li>Startup convergence: <a href="maintenance.py"><code>maintenance.py</code></a> -> <a href="bridge.py"><code>bridge.py</code></a> sync -> <a href="bridge.py"><code>bridge.py</code></a> legacy migrate -> the Codex marketplace upgrade</li>
-<li>Release swap: the Codex plugin install of the newer release -> that release's <a href="launch.sh"><code>launch.sh</code></a> or <a href="launch.cmd"><code>launch.cmd</code></a> -> <a href="bridge.py"><code>bridge.py</code></a> sync</li>
-</ul>
-
-<h2>Launchers</h2>
-<ul>
-<li><a href="launch.sh"><code>launch.sh</code></a>: the POSIX entry point. It picks an interpreter (the CODEX_KIT_PYTHON override, the private runtime, then the system Python), checks it runs Python 3.10 or newer, and execs the bridge in isolated mode. Open when a POSIX machine fails before the bridge starts.</li>
-<li><a href="launch.cmd"><code>launch.cmd</code></a>: the Windows entry point. A single line that hands off to <a href="launch.ps1"><code>launch.ps1</code></a>, which carries the real logic.</li>
-<li><a href="launch.ps1"><code>launch.ps1</code></a>: the Windows interpreter search and bridge run. It mirrors <a href="launch.sh"><code>launch.sh</code></a>, including the private-runtime fallback. Open when Windows reports a startup error the shell path would not show.</li>
-</ul>
-
-<h2>Bridge engine</h2>
-<ul>
-<li><a href="bridge.py"><code>bridge.py</code></a>: the module every launcher execs. It discovers installed plugins and their skills, enforces safe paths and the sync lock, and writes the generated marketplace that Codex reads. Open for how a skill is forwarded or where the kit state lives.</li>
-</ul>
-
-<h2>Compatibility analysis</h2>
-<ul>
-<li><a href="compatibility.py"><code>compatibility.py</code></a>: scaffold-time analysis of forwarded skills. It extracts required capabilities from skill frontmatter, resolves them against the capability profile and mappings, and caches the resolution and the inference. Open when you need to know why a skill landed as supported, adapted, or claude-only.</li>
-</ul>
-
-<h2>Private Python runtime</h2>
-<ul>
-<li><a href="runtime.sh"><code>runtime.sh</code></a>: the POSIX provisioner for the pinned interpreter. Called only when the launcher found no suitable Python. It downloads the archive, verifies the SHA256 from <a href="runtime-assets.tsv"><code>runtime-assets.tsv</code></a>, and installs under a lock.</li>
-<li><a href="runtime.ps1"><code>runtime.ps1</code></a>: the same flow for Windows, with reparse-point checks on every path it touches. An already-installed runtime is re-verified rather than re-downloaded.</li>
-<li><a href="runtime-assets.tsv"><code>runtime-assets.tsv</code></a>: the pinned per-platform SHA256 values for the python-build-standalone release. Open to confirm which interpreter the launchers will install, or to pin a new one.</li>
-</ul>
-
-<h2>Maintenance and migration</h2>
-<ul>
-<li><a href="maintenance.py"><code>maintenance.py</code></a>: startup convergence for the installed plugin. It runs a local sync, then a legacy-migration check, then a rate-limited release update from the official marketplace. Open when an update or a convergence warning needs explaining.</li>
-<li><a href="migration.py"><code>migration.py</code></a>: one-shot recovery of the retired standalone bridge. It inventories legacy hooks, stubs, and state, and removes only the exact retired files it recognizes. Open when a machine still runs the old gateway.</li>
-</ul>
+<h1>Claude Plugins Kit scripts: bridge Claude plugins into Codex, launch across platforms with a private Python fallback, analyze skill compatibility, auto-update the plugin, and migrate from the retired standalone bridge.</h1>
+<p class="hh-orientation">These scripts are the runtime side of the kit: they start the bridge, supply a private interpreter when needed, and sync Claude skills into Codex. They also check skill compatibility, update the installed plugin, and recover state from the retired standalone bridge. The layout follows the work each step performs: entry points, private runtime, core bridge, analysis, maintenance, and migration.</p><section><h2>Where to start</h2><p><a href="launch.sh">plugins/claude-plugins-kit/scripts/launch.sh</a> first to trace interpreter discovery, then <a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> for the sync, marketplace, and state logic behind startup.</p></section><section><h2>Routes</h2><ul><li><strong>Start on POSIX</strong><ol><li><a href="launch.sh">plugins/claude-plugins-kit/scripts/launch.sh</a> finds an interpreter and starts the bridge.</li><li><a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> runs the requested command.</li></ol></li><li><strong>Start on Windows</strong><ol><li><a href="launch.cmd">plugins/claude-plugins-kit/scripts/launch.cmd</a> starts the PowerShell launcher.</li><li><a href="launch.ps1">plugins/claude-plugins-kit/scripts/launch.ps1</a> chooses Python and starts the bridge.</li><li><a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> runs the command.</li></ol></li></ul></section><section><h2>Launch and runtime</h2><ul><li><a href="launch.sh">plugins/claude-plugins-kit/scripts/launch.sh</a> is the POSIX entry point; open it to trace interpreter discovery and bridge startup.</li><li><a href="launch.ps1">plugins/claude-plugins-kit/scripts/launch.ps1</a> is the PowerShell entry point used by the Windows stub; it has the same discovery logic.</li><li><a href="launch.cmd">plugins/claude-plugins-kit/scripts/launch.cmd</a> is the Windows batch stub that starts the PowerShell launcher.</li><li><a href="runtime.sh">plugins/claude-plugins-kit/scripts/runtime.sh</a> is the private-runtime installer for macOS and Linux; it downloads, verifies, and caches Python.</li><li><a href="runtime.ps1">plugins/claude-plugins-kit/scripts/runtime.ps1</a> is the private-runtime installer for Windows; it has the same verify-and-cache behavior.</li><li><a href="runtime-assets.tsv">plugins/claude-plugins-kit/scripts/runtime-assets.tsv</a> holds the pinned platform hashes for private Python downloads.</li></ul></section><section><h2>Bridge and compatibility</h2><ul><li><a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> is the core bridge; it syncs Claude skills, marketplace data, state, and user settings into Codex.</li><li><a href="compatibility.py">plugins/claude-plugins-kit/scripts/compatibility.py</a> is the scaffold-time compatibility analysis; it resolves capabilities and caches inference results.</li></ul></section><section><h2>Maintenance and migration</h2><ul><li><a href="maintenance.py">plugins/claude-plugins-kit/scripts/maintenance.py</a> handles startup convergence and automatic release updates for the installed native plugin.</li><li><a href="migration.py">plugins/claude-plugins-kit/scripts/migration.py</a> is the recovery path from the retired standalone bridge to the native plugin.</li></ul></section>
 </main>
+<nav data-human-html-chrome="nav"><ul><li><a href="../index.html"><span class="hh-nav-label">claude-plugins-kit</span> <span class="hh-nav-identity">Claude Plugins Kit package that forwards installed Claude Code skills to Codex without copying instructions, including its manifest, startup hook, skill documentation, and compatibility data.</span></a></li></ul></nav>
 <script>
 if (window.parent !== window) {
   window.parent.postMessage({
@@ -446,7 +401,7 @@ if (window.parent !== window) {
     directory: "plugins/claude-plugins-kit/scripts",
     file: "index.html",
     kind: "page",
-    source_sha: "946cc157123f727ca4439ca548ff6fe6d1ebea22"
+    source_sha: "f19c3328dac9cd5a9d0ada7440c7b936f82fb5c7"
   }, "*");
   document.addEventListener("click", function (event) {
     if (event.defaultPrevented || event.button !== 0) return;

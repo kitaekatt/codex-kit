@@ -2,10 +2,12 @@
   "schema_version": 1,
   "directory": "plugins/claude-plugins-kit/scripts",
   "decision": "page",
-  "source_sha": "946cc157123f727ca4439ca548ff6fe6d1ebea22",
-  "generation_spec_sha256": "0805933a1de089dc951a33d702e9d57d569f0584732b017cd3600742a34ba321",
+  "source_sha": "f19c3328dac9cd5a9d0ada7440c7b936f82fb5c7",
+  "generation_spec_sha256": "fc236b0086521fffedc696039900f19579336e4ef8fb657ad60e3dcdf8747288",
+  "input_sha256": "58396ec659ab0df930b0d8e5a9a3c0ff2e345b3616e39208393692a7e8bd0c33",
+  "input_shape_sha256": "30a541655bf2c043425b83d58ce16610ceb4e714a679ac26b0123606425a050d",
   "dirty": false,
-  "identity": "Claude Plugins Kit scripts: Claude-to-Codex bridge, launcher, private Python runtime, compatibility analysis, maintenance, and migration.",
+  "identity": "Claude Plugins Kit scripts: bridge Claude plugins into Codex, launch across platforms with a private Python fallback, analyze skill compatibility, auto-update the plugin, and migrate from the retired standalone bridge.",
   "instructions": "",
   "references": []
 }

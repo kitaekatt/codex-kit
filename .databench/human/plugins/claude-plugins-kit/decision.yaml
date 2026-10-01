@@ -3,7 +3,7 @@
   "directory": "plugins/claude-plugins-kit",
   "decision": "page",
   "source_sha": "0f27295c89195fcb2a06ec9164ac252e0f65589f",
-  "generation_spec_sha256": "0805933a1de089dc951a33d702e9d57d569f0584732b017cd3600742a34ba321",
+  "generation_spec_sha256": "fc236b0086521fffedc696039900f19579336e4ef8fb657ad60e3dcdf8747288",
   "dirty": false,
   "identity": "Claude Plugins Kit package that forwards installed Claude Code skills to Codex without copying instructions, including its manifest, startup hook, skill documentation, and compatibility data.",
   "instructions": "",
