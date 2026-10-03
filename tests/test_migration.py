@@ -119,6 +119,10 @@ def add_claude_source(env: dict[str, str], tmp_path: Path) -> None:
     personal = tmp_path / "claude" / "skills"
     personal.mkdir(parents=True)
     env["CLAUDE_PLUGINS_REGISTRY"] = str(registry)
+    env["CLAUDE_CONFIG_DIR"] = str(registry.parent.parent)
+    (registry.parent.parent / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"awesome@plugins-kit": True}})
+    )
     env["CLAUDE_SKILLS_ROOT"] = str(personal)
 
 
@@ -181,7 +185,8 @@ def successful_native(
 
     def syncer(_installed: Path, _env: object) -> dict[str, object]:
         sources, duplicates = bridge.installed_sources(
-            Path(env["CLAUDE_PLUGINS_REGISTRY"]), Path(env["CLAUDE_SKILLS_ROOT"])
+            Path(env["CLAUDE_PLUGINS_REGISTRY"]), Path(env["CLAUDE_SKILLS_ROOT"]),
+            Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json"
         )
         assert duplicates == [] and len(sources) == 1
         files, _ = bridge.rendered_plugin(sources[0], {})

@@ -147,7 +147,9 @@ def source_fixture(tmp_path: Path, identities=("alpha@test",)):
         ]
     registry.parent.mkdir(parents=True)
     registry.write_text(json.dumps({"version": 2, "plugins": records}), encoding="utf-8")
+    (claude / "settings.json").write_text(json.dumps({"enabledPlugins": dict.fromkeys(identities, True)}))
     env = {
+        "CLAUDE_CONFIG_DIR": str(claude),
         "CLAUDE_PLUGINS_REGISTRY": str(registry),
         "CLAUDE_SKILLS_ROOT": str(personal),
         "CODEX_KIT_DATA_ROOT": str(tmp_path / "data"),
@@ -162,6 +164,77 @@ def installed_record(name, marketplace, version="1.0.0"):
         "marketplaceName": marketplace,
         "version": version,
     }
+
+
+def test_enabled_user_plugins_only_and_disabled_stale_paths_are_ignored(bridge, tmp_path):
+    env, registry, roots = source_fixture(tmp_path, ("alpha@test", "disabled@test", "project@test"))
+    settings = Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json"
+    settings.write_text(json.dumps({"enabledPlugins": {
+        "alpha@test": True, "disabled@test": False, "project@test": True,
+    }}))
+    document = json.loads(registry.read_text())
+    document["plugins"]["disabled@test"][0]["installPath"] = str(tmp_path / "missing")
+    document["plugins"]["project@test"][0]["scope"] = "project"
+    registry.write_text(json.dumps(document))
+    sources, duplicates = bridge.installed_sources(registry, Path(env["CLAUDE_SKILLS_ROOT"]), settings)
+    assert [source.identity for source in sources] == ["alpha@test", "claude-user"]
+    assert sources[0].root == roots["alpha@test"]
+    assert duplicates == []
+
+
+def test_registry_override_keeps_selected_config_enablement(bridge, tmp_path):
+    env, registry, _ = source_fixture(tmp_path)
+    moved = tmp_path / "override" / "registry.json"
+    moved.parent.mkdir()
+    moved.write_text(registry.read_text())
+    env["CLAUDE_PLUGINS_REGISTRY"] = str(moved)
+    (moved.parent / "settings.json").write_text(json.dumps({"enabledPlugins": {"alpha@test": False}}))
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+    assert result["status"] == "changed", result
+    assert "alpha" in json.loads((Path(env["CODEX_KIT_DATA_ROOT"]) / "state.json").read_text())["plugins"]
+
+
+@pytest.mark.parametrize("identity, records", [
+    ("invalid-identity", [{"scope": "user", "installPath": "/missing"}]),
+    ("disabled@test", []),
+    ("disabled@test", [{"scope": "user"}]),
+])
+def test_disabled_registry_records_still_require_valid_structure(bridge, tmp_path, identity, records):
+    env, registry, _ = source_fixture(tmp_path)
+    document = json.loads(registry.read_text())
+    document["plugins"][identity] = records
+    registry.write_text(json.dumps(document))
+    result = bridge.sync(env=env, runner=FakeRunner(), install=True)
+    assert result["status"] == "error"
+    assert "invalid" in result["message"]
+
+
+@pytest.mark.parametrize("missing_record", [True, False])
+def test_enabled_missing_sources_fail_without_pruning(bridge, tmp_path, missing_record):
+    env, registry, roots, _ = initial_sync(bridge, tmp_path)
+    if missing_record:
+        registry.write_text(json.dumps({"version": 2, "plugins": {}}))
+    else:
+        roots["alpha@test"].rename(tmp_path / "moved-source")
+    runner = FakeRunner(installed=generated_records(bridge, env, "alpha", "claude-user"))
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["status"] == "error"
+    assert ("no installed record" if missing_record else "source is missing") in result["message"]
+    assert not any(call[:2] == ("plugin", "remove") for call in runner.calls)
+
+
+def test_disabling_claude_plugin_removes_owned_native_wrapper(bridge, tmp_path):
+    env, _, _, _ = initial_sync(bridge, tmp_path)
+    settings = Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json"
+    settings.write_text(json.dumps({"enabledPlugins": {"alpha@test": False}}))
+    runner = FakeRunner(
+        installed=generated_records(bridge, env, "alpha", "claude-user"),
+        marketplaces=generated_marketplace(bridge, env),
+    )
+    result = bridge.sync(env=env, runner=runner, install=True, respect_disabled=True)
+    assert result["status"] == "changed", result
+    assert ("plugin", "remove", "alpha@claude-plugins-kit-generated", "--json") in runner.calls
+    assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha").exists()
 
 
 def generated_records(bridge, env, *names):
@@ -285,8 +358,8 @@ def test_source_change_between_discovery_and_analysis_is_rejected(bridge, tmp_pa
     env, _, roots = source_fixture(tmp_path)
     original_discovery = bridge.installed_sources
 
-    def mutate_after_discovery(registry, personal):
-        sources, duplicates = original_discovery(registry, personal)
+    def mutate_after_discovery(registry, personal, settings):
+        sources, duplicates = original_discovery(registry, personal, settings)
         write_skill(roots["alpha@test"] / "skills", "do-work", "Changed after discovery.")
         return sources, duplicates
 
@@ -405,6 +478,7 @@ def test_claude_uninstall_removes_only_owned_wrapper(bridge, tmp_path):
     document = json.loads(registry.read_text(encoding="utf-8"))
     document["plugins"] = {}
     registry.write_text(json.dumps(document), encoding="utf-8")
+    (Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json").write_text(json.dumps({"enabledPlugins": {}}))
     installed = generated_records(bridge, env, "alpha", "claude-user")
     runner = FakeRunner(installed=installed, marketplaces=generated_marketplace(bridge, env))
     result = bridge.sync(env=env, runner=runner, install=True)
@@ -473,6 +547,9 @@ def test_malformed_user_record_errors_but_project_only_plugin_is_skipped(bridge,
     env, registry, _ = source_fixture(tmp_path)
     document = json.loads(registry.read_text())
     document["plugins"]["bad@test"] = [{"scope": "user"}]
+    (Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"alpha@test": True, "bad@test": True}})
+    )
     registry.write_text(json.dumps(document))
     result = bridge.sync(env=env, runner=FakeRunner(), install=True)
     assert result["status"] == "error"

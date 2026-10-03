@@ -865,7 +865,9 @@ def _expected_generated(
         paths = bridge.paths_for(env, installed_root / "scripts" / "bridge.py")
         registry, personal = bridge.claude_paths(env)
         overrides = bridge.load_overrides(paths.overrides_file)
-        sources, duplicates = bridge.installed_sources(registry, personal)
+        sources, duplicates = bridge.installed_sources(
+            registry, personal, bridge.claude_config_root(env) / "settings.json"
+        )
     except Exception as exc:
         raise MigrationError(f"cannot derive native wrapper catalog from current Claude sources: {exc}") from exc
     skipped_set = set(skipped)

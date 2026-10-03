@@ -70,6 +70,9 @@ def write_registry(path: Path, plugin_root: Path, installed: bool = True) -> Non
         ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"version": 2, "plugins": plugins}), encoding="utf-8")
+    (path.parent.parent / "settings.json").write_text(
+        json.dumps({"enabledPlugins": dict.fromkeys(plugins, True)}), encoding="utf-8"
+    )
 
 
 def isolated_environment(tmp_path: Path, registry: Path, personal_skills: Path) -> dict[str, str]:
@@ -90,6 +93,7 @@ def isolated_environment(tmp_path: Path, registry: Path, personal_skills: Path) 
         "CODEX_KIT_CODEX_BIN": CODEX,
         "CODEX_KIT_PYTHON": sys.executable,
         "CLAUDE_PLUGINS_REGISTRY": str(registry),
+        "CLAUDE_CONFIG_DIR": str(registry.parent.parent),
         "CLAUDE_SKILLS_ROOT": str(personal_skills),
         "NO_COLOR": "1",
     }
@@ -358,7 +362,9 @@ def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) 
     assert "awesome-kit:debug-context" not in skill_removed
     assert "awesome-kit:orchestrate" in skill_removed
 
-    write_registry(registry, plugin_root, installed=False)
+    (registry.parent.parent / "settings.json").write_text(
+        json.dumps({"enabledPlugins": {"awesome-kit@plugins-kit": False}}), encoding="utf-8"
+    )
     uninstall_sync = sync_installed_bridge(launcher, env, cwd)
     assert uninstall_sync["status"] == "changed", uninstall_sync
     final = skills_by_name(app_server_skills(env, cwd))

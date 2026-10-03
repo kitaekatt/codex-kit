@@ -7,6 +7,15 @@ The bridge discovers Claude sources in this order:
 3. `$DEVROOT/claude-settings` when it exists.
 4. The platform Claude home, normally `~/.claude`.
 
+Plugin wrappers require `enabledPlugins` to be `true` in the selected config
+root's local `settings.json` and an installed user-scope record. An explicit
+registry override changes only the registry path; enablement still comes from
+that config root. Disabled and project-only plugins are skipped. An enabled
+plugin with a missing installed record or source fails without pruning existing
+wrappers. Removing local enablement retires owned wrappers through native Codex
+plugin removal. Native Codex plugin disablement retains its separate maintenance
+policy.
+
 Generated state defaults to the platform application-data directory under `codex-kit`: `$XDG_DATA_HOME/codex-kit` or `~/.local/share/codex-kit` on Linux, `~/Library/Application Support/codex-kit` on macOS, and `%LOCALAPPDATA%\\codex-kit` on Windows. `CODEX_KIT_DATA_ROOT` overrides it. The bridge refuses a data root inside a Git worktree or through a symlink.
 
 The generated marketplace is `claude-plugins-kit-generated`. Synchronization uses native `codex plugin marketplace add`, `codex plugin add`, and `codex plugin remove`. It never edits the downloaded plugin cache for Codex. An installed native Codex plugin with the same name wins. The bridge reports and skips that wrapper. It does not modify the native plugin.

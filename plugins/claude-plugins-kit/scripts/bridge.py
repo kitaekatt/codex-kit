@@ -215,9 +215,7 @@ def validate_managed_paths(paths: Paths) -> None:
             raise BridgeError(f"managed path is a symlink: {path}")
 
 
-def claude_paths(env: Mapping[str, str]) -> tuple[Path, Path]:
-    explicit_registry = env.get("CLAUDE_PLUGINS_REGISTRY")
-    explicit_skills = env.get("CLAUDE_SKILLS_ROOT")
+def claude_config_root(env: Mapping[str, str]) -> Path:
     configured = env.get("CLAUDE_CONFIG_DIR")
     if configured:
         claude_root = Path(configured).expanduser().absolute()
@@ -225,6 +223,13 @@ def claude_paths(env: Mapping[str, str]) -> tuple[Path, Path]:
         devroot = env.get("DEVROOT")
         shared = Path(devroot).expanduser().absolute() / "claude-settings" if devroot else None
         claude_root = shared if shared and shared.is_dir() else Path.home() / ".claude"
+    return claude_root
+
+
+def claude_paths(env: Mapping[str, str]) -> tuple[Path, Path]:
+    explicit_registry = env.get("CLAUDE_PLUGINS_REGISTRY")
+    explicit_skills = env.get("CLAUDE_SKILLS_ROOT")
+    claude_root = claude_config_root(env)
     registry = (
         Path(explicit_registry).expanduser().absolute()
         if explicit_registry
@@ -436,7 +441,16 @@ def plugin_skill_source(root: Path, folder: str) -> SkillSource | None:
     return next((item for item in skill_sources(root, "plugin") if item.folder == folder), None)
 
 
-def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[PluginSource], list[str]]:
+def installed_sources(
+    registry: Path, personal_skills: Path, settings: Path
+) -> tuple[list[PluginSource], list[str]]:
+    configuration = read_json(settings, "Claude user settings")
+    enabled = configuration.get("enabledPlugins", {}) if isinstance(configuration, dict) else None
+    if not isinstance(enabled, dict) or any(
+        not isinstance(identity, str) or not isinstance(value, bool)
+        for identity, value in enabled.items()
+    ):
+        raise BridgeError(f"invalid enabledPlugins in Claude user settings: {settings}")
     try:
         document = json.loads(registry.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -444,6 +458,9 @@ def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[Plugi
     plugins = document.get("plugins") if isinstance(document, dict) else None
     if not isinstance(document, dict) or document.get("version") != 2 or not isinstance(plugins, dict):
         raise BridgeError(f"invalid Claude plugin registry: {registry}")
+    missing = sorted(identity for identity, value in enabled.items() if value and identity not in plugins)
+    if missing:
+        raise BridgeError(f"enabled Claude plugins have no installed record: {', '.join(missing)}")
     sources: list[PluginSource] = []
     by_name: dict[str, list[str]] = {}
     for identity, records in sorted(plugins.items()):
@@ -459,6 +476,8 @@ def installed_sources(registry: Path, personal_skills: Path) -> tuple[list[Plugi
                 not isinstance(record.get("installPath"), str) or not record["installPath"].strip()
             ):
                 raise BridgeError(f"invalid user-scope installPath for Claude plugin: {identity}")
+        if enabled.get(identity) is not True:
+            continue
         users = [
             record
             for record in records
@@ -858,7 +877,7 @@ def sync(
             registry, personal = claude_paths(env)
             overrides = load_overrides(paths.overrides_file)
             excluded = load_user_config(paths.user_config_file)
-            sources, duplicates = installed_sources(registry, personal)
+            sources, duplicates = installed_sources(registry, personal, claude_config_root(env) / "settings.json")
             compatibility = _compatibility_module()
             profile, mappings = compatibility.load_capability_documents(paths.bridge_root, paths.data_root)
             try:
