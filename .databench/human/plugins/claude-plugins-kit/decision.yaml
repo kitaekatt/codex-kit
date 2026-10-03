@@ -2,7 +2,7 @@
   "schema_version": 1,
   "directory": "plugins/claude-plugins-kit",
   "decision": "none",
-  "source_sha": "34000b9f4bb5d959d03b3bc7446e3881fe41affa",
+  "source_sha": "0e73937e35815cb26b8355c982b249e5e530e7e5",
   "input_sha256": "a74fa4049843d34a356b146a341a79b074584b94a34949388da58b271fd547bd",
   "input_shape_sha256": "56aacebf315428bb7170556eba52db1141402ac9b3ae0792136b5d3582c0eb71",
   "dirty": false,
