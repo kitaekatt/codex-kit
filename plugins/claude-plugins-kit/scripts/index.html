@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-<!-- human-html: {"generated_by":"md-domain","source_sha":"f19c3328dac9cd5a9d0ada7440c7b936f82fb5c7","directory":"plugins/claude-plugins-kit/scripts","kind":"page"} -->
+<!-- human-html: {"generated_by":"md-domain","source_sha":"34000b9f4bb5d959d03b3bc7446e3881fe41affa","directory":"plugins/claude-plugins-kit/scripts","kind":"page"} -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
@@ -13,7 +13,7 @@
 <h1>Claude Plugins Kit scripts: bridge Claude plugins into Codex, launch across platforms with a private Python fallback, analyze skill compatibility, auto-update the plugin, and migrate from the retired standalone bridge.</h1>
 <p class="hh-orientation">These scripts are the runtime side of the kit: they start the bridge, supply a private interpreter when needed, and sync Claude skills into Codex. They also check skill compatibility, update the installed plugin, and recover state from the retired standalone bridge. The layout follows the work each step performs: entry points, private runtime, core bridge, analysis, maintenance, and migration.</p><section><h2>Where to start</h2><p><a href="launch.sh">plugins/claude-plugins-kit/scripts/launch.sh</a> first to trace interpreter discovery, then <a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> for the sync, marketplace, and state logic behind startup.</p></section><section><h2>Routes</h2><ul><li><strong>Start on POSIX</strong><ol><li><a href="launch.sh">plugins/claude-plugins-kit/scripts/launch.sh</a> finds an interpreter and starts the bridge.</li><li><a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> runs the requested command.</li></ol></li><li><strong>Start on Windows</strong><ol><li><a href="launch.cmd">plugins/claude-plugins-kit/scripts/launch.cmd</a> starts the PowerShell launcher.</li><li><a href="launch.ps1">plugins/claude-plugins-kit/scripts/launch.ps1</a> chooses Python and starts the bridge.</li><li><a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> runs the command.</li></ol></li></ul></section><section><h2>Launch and runtime</h2><ul><li><a href="launch.sh">plugins/claude-plugins-kit/scripts/launch.sh</a> is the POSIX entry point; open it to trace interpreter discovery and bridge startup.</li><li><a href="launch.ps1">plugins/claude-plugins-kit/scripts/launch.ps1</a> is the PowerShell entry point used by the Windows stub; it has the same discovery logic.</li><li><a href="launch.cmd">plugins/claude-plugins-kit/scripts/launch.cmd</a> is the Windows batch stub that starts the PowerShell launcher.</li><li><a href="runtime.sh">plugins/claude-plugins-kit/scripts/runtime.sh</a> is the private-runtime installer for macOS and Linux; it downloads, verifies, and caches Python.</li><li><a href="runtime.ps1">plugins/claude-plugins-kit/scripts/runtime.ps1</a> is the private-runtime installer for Windows; it has the same verify-and-cache behavior.</li><li><a href="runtime-assets.tsv">plugins/claude-plugins-kit/scripts/runtime-assets.tsv</a> holds the pinned platform hashes for private Python downloads.</li></ul></section><section><h2>Bridge and compatibility</h2><ul><li><a href="bridge.py">plugins/claude-plugins-kit/scripts/bridge.py</a> is the core bridge; it syncs Claude skills, marketplace data, state, and user settings into Codex.</li><li><a href="compatibility.py">plugins/claude-plugins-kit/scripts/compatibility.py</a> is the scaffold-time compatibility analysis; it resolves capabilities and caches inference results.</li></ul></section><section><h2>Maintenance and migration</h2><ul><li><a href="maintenance.py">plugins/claude-plugins-kit/scripts/maintenance.py</a> handles startup convergence and automatic release updates for the installed native plugin.</li><li><a href="migration.py">plugins/claude-plugins-kit/scripts/migration.py</a> is the recovery path from the retired standalone bridge to the native plugin.</li></ul></section>
 </main>
-<nav data-human-html-chrome="nav"><ul><li><a href="../index.html"><span class="hh-nav-label">claude-plugins-kit</span> <span class="hh-nav-identity">Claude Plugins Kit package that forwards installed Claude Code skills to Codex without copying instructions, including its manifest, startup hook, skill documentation, and compatibility data.</span></a></li></ul></nav>
+<nav data-human-html-chrome="nav"><ul></ul></nav>
 <script>
 if (window.parent !== window) {
   window.parent.postMessage({
@@ -22,7 +22,7 @@ if (window.parent !== window) {
     directory: "plugins/claude-plugins-kit/scripts",
     file: "index.html",
     kind: "page",
-    source_sha: "f19c3328dac9cd5a9d0ada7440c7b936f82fb5c7"
+    source_sha: "34000b9f4bb5d959d03b3bc7446e3881fe41affa"
   }, "*");
   document.addEventListener("click", function (event) {
     if (event.defaultPrevented || event.button !== 0) return;

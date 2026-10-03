@@ -1,5 +1,7 @@
 {
   "schema_version": 2,
   "state": "in-progress",
-  "finished": {}
+  "finished": {
+    "plugins/claude-plugins-kit/scripts": "5773a8ab6ae2df3e6055e8bbf3f1d69664420af068dea6a8307a3dae283c13ae"
+  }
 }

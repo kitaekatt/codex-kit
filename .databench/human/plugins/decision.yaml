@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "directory": "plugins",
+  "decision": "none",
+  "source_sha": "34000b9f4bb5d959d03b3bc7446e3881fe41affa",
+  "input_sha256": "c406d2705bdcae1f33af9f92066a91fcdf8201802918649d3a893e9208d1a65c",
+  "input_shape_sha256": "4461366950bfab108fe0d55d2d1fae79e18567226bbe5aaf28c060b7aa4bc8f8",
+  "dirty": true,
+  "identity": "",
+  "instructions": "",
+  "references": []
+}
