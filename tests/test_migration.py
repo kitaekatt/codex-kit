@@ -189,7 +189,15 @@ def successful_native(
             Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json"
         )
         assert duplicates == [] and len(sources) == 1
-        files, _ = bridge.rendered_plugin(sources[0], {})
+        compatibility = bridge._compatibility_module()
+        reports = {
+            skill.folder: compatibility.make_report(
+                source_identity=sources[0].identity, skill_path=skill.relative_path,
+                source_digest=skill.source_digest, requirements=[], inference={"status": "not-needed"},
+            )
+            for skill in sources[0].skills
+        }
+        files, _ = bridge.rendered_plugin(sources[0], {}, reports)
         generated = tmp_path / "data" / bridge.GENERATED_MARKETPLACE / "plugins" / "awesome"
         for relative, content in files.items():
             path = generated / relative
@@ -320,6 +328,44 @@ def test_missing_expected_generated_plugin_blocks_cleanup(
         ],
     )
 
+    assert result["status"] == "error"
+    assert result["phase"] == "verify"
+    assert all(path.exists() for path in legacy_files)
+
+
+@pytest.mark.parametrize("tamper", ["missing", "malformed-json", "generation", "stale-source", "symlink"])
+def test_compatibility_report_tampering_blocks_legacy_cleanup(
+    bridge, tmp_path: Path, tamper: str
+) -> None:
+    env, legacy_files = legacy_fixture(tmp_path)
+    add_claude_source(env, tmp_path)
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env)
+
+    def tampered_sync(installed: Path, environment: object) -> dict[str, object]:
+        result = syncer(installed, environment)
+        report_path = tmp_path / "data" / bridge.GENERATED_MARKETPLACE / "plugins/awesome/compatibility/do-work.json"
+        if tamper == "missing":
+            report_path.unlink()
+        elif tamper == "malformed-json":
+            report_path.write_text("{invalid")
+        elif tamper == "symlink":
+            target = tmp_path / "foreign-report.json"
+            target.write_bytes(report_path.read_bytes())
+            report_path.unlink()
+            report_path.symlink_to(target)
+        else:
+            report = json.loads(report_path.read_text())
+            if tamper == "generation":
+                report["generation"] = "wrong"
+            else:
+                report["source"]["digest"] = "stale"
+                report["generation"] = bridge._compatibility_module().report_generation(report)
+            report_path.write_text(json.dumps(report))
+        return result
+
+    result = bridge.migrate(
+        env=env, runner=runner, install=True, sync_launcher=tampered_sync, discoverer=discoverer
+    )
     assert result["status"] == "error"
     assert result["phase"] == "verify"
     assert all(path.exists() for path in legacy_files)

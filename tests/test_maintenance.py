@@ -169,7 +169,7 @@ def test_lock_contention_leaves_catalog_untouched(bridge, tmp_path):
     assert not any(call[:2] == ("plugin", "add") for call in runner.calls)
 
 
-@pytest.mark.parametrize("behavior", ["success", "failure", "verify", "disabled", "removed"])
+@pytest.mark.parametrize("behavior", ["success", "retire-old", "failure", "verify", "disabled", "removed"])
 def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch, behavior):
     env, _, _ = source_fixture(tmp_path)
     real_home = tmp_path / "codex-home"
@@ -186,6 +186,10 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
     installed_root = real_home / "plugins/cache/codex-kit/claude-plugins-kit/9.0.0"
     shutil.copytree(candidate, installed_root)
     reported_installed_root = alias_home / "plugins/cache/codex-kit/claude-plugins-kit/9.0.0"
+    old_root = real_home / "plugins/cache/codex-kit/claude-plugins-kit/1.0.0"
+    if behavior == "retire-old":
+        shutil.copytree(candidate, old_root)
+        bridge = bridge._migration_module()._load_installed_bridge(old_root)
     if behavior == "verify":
         installed_manifest = installed_root / ".codex-plugin/plugin.json"
         invalid = json.loads(installed_manifest.read_text())
@@ -201,6 +205,8 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
                 if behavior == "removed":
                     self.installed = []
             if tuple(arguments) == install:
+                if behavior == "retire-old":
+                    shutil.rmtree(old_root)
                 if behavior == "failure":
                     return subprocess.CompletedProcess(arguments, 1, "", "offline install")
                 return subprocess.CompletedProcess(arguments, 0, json.dumps({"pluginId": "claude-plugins-kit@codex-kit", "version": "9.0.0", "installedPath": str(reported_installed_root)}), "")
@@ -216,10 +222,13 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
         return original_run(arguments, **kwargs)
     monkeypatch.setattr(subprocess, "run", refresh)
     result = bridge.maintain(env=env, runner=runner)
-    if behavior == "success":
+    if behavior in {"success", "retire-old"}:
         assert result.get("bridge_updated") is True, result
         assert calls and "--respect-disabled" in calls[0]
         assert not result["warnings"]
+        if behavior == "retire-old":
+            assert not old_root.exists()
+            assert json.loads((Path(env["CODEX_KIT_DATA_ROOT"]) / "maintenance.json").read_text())["last_success"] > 0
     elif behavior in {"failure", "verify"}:
         assert result["warnings"]
         assert not calls

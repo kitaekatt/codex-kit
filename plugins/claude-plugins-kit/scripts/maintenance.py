@@ -124,11 +124,12 @@ def update_release(*, bridge: Any, env: Mapping[str, str], runner: Any,
         # Recheck disable/removal after the network wait; never resurrect an opt-out.
         if active_bridge(bridge, runner) is None:
             return None
+        # Native add can retire the running release's files immediately.
+        migration = bridge._migration_module()
+        raw_home, codex_home = migration._resolve_codex_home(env)
         installed = bridge.json_command(runner, ["plugin", "add", PLUGIN_ID, "--json"], "bridge release install")
         if not isinstance(installed, dict) or installed.get("pluginId") != PLUGIN_ID or installed.get("version") != manifest["version"] or not isinstance(installed.get("installedPath"), str):
             raise ValueError("native bridge install did not return the selected release")
-        migration = bridge._migration_module()
-        raw_home, codex_home = migration._resolve_codex_home(env)
         new_root = migration._verify_installed_root(
             Path(installed["installedPath"]), codex_home, manifest["version"], raw_home
         )

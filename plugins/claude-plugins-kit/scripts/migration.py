@@ -875,12 +875,35 @@ def _expected_generated(
         raise MigrationError(f"gateway sync omitted duplicate-source diagnostics: {duplicates}")
     expected: dict[str, tuple[str, dict[str, str], Path]] = {}
     skills: set[str] = set()
+    compatibility = bridge._compatibility_module()
     for source in sources:
         if source.name in skipped_set:
             continue
-        files, _ = bridge.rendered_plugin(source, overrides)
-        version = json.loads(files["plugin.json"])["version"]
         root = paths.plugins_root / source.name
+        reports: dict[str, Mapping[str, Any]] = {}
+        for skill in source.skills:
+            path = root / "compatibility" / f"{skill.folder}.json"
+            try:
+                bridge._safe_source_file(root, path)
+                report = bridge.read_json(path, "generated compatibility report")
+            except bridge.BridgeError as exc:
+                raise MigrationError(f"cannot verify generated compatibility report: {exc}") from exc
+            if (
+                not isinstance(report, dict)
+                or report.get("schema") != compatibility.REPORT_SCHEMA
+                or report.get("analyzer_version") != compatibility.ANALYZER_VERSION
+                or report.get("generation") != compatibility.report_generation(report)
+                or report.get("source") != {
+                    "identity": source.identity,
+                    "skill_path": skill.relative_path,
+                    "digest": skill.source_digest,
+                }
+            ):
+                raise MigrationError(f"generated compatibility report is invalid or stale: {path}")
+            reports[skill.folder] = report
+        # Reuse scaffold evidence; verification must not rerun model inference.
+        files, _ = bridge.rendered_plugin(source, overrides, reports)
+        version = json.loads(files["plugin.json"])["version"]
         expected[source.name] = (version, files, root)
         skills.update(f"{source.name}:{skill.folder}" for skill in source.skills)
     return expected, skills
