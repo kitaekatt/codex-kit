@@ -3,7 +3,7 @@
   "directory": "plugins/claude-plugins-kit/scripts",
   "decision": "page",
   "source_sha": "34000b9f4bb5d959d03b3bc7446e3881fe41affa",
-  "generation_spec_sha256": "9ff6d95c6dfa06e27a9196a26596c8b98ddf698bf2a82b9885b93c69cfaaa1e2",
+  "generation_spec_sha256": "d40323919c23e31cc9c5afe305627667e78bca3c257330f0fc0b3a9b1c826ade",
   "input_sha256": "9174b5a60b562000f139af38e8d9b6a5d66076b4af775e4ad72d2e3c4f1a12d3",
   "input_shape_sha256": "30a541655bf2c043425b83d58ce16610ceb4e714a679ac26b0123606425a050d",
   "dirty": false,
