@@ -214,7 +214,13 @@ def test_cli_inference_sends_luna_and_effort_and_records_unverified_actual_effor
         observed["arguments"] = arguments
         return subprocess.CompletedProcess(arguments, 0, json.dumps(response), "")
 
-    monkeypatch.setattr(compatibility.shutil, "which", lambda _: str(Path.cwd() / "fake-llm-scripting-kit"))
+    looked_up = []
+
+    def fake_which(name):
+        looked_up.append(name)
+        return str(Path.cwd() / "fake-llm-kit")
+
+    monkeypatch.setattr(compatibility.shutil, "which", fake_which)
     monkeypatch.setattr(compatibility.subprocess, "run", fake_run)
     result = compatibility.run_inference(
         "prompt", requested_model="gpt-5.6-luna", requested_effort="xhigh",
@@ -223,7 +229,12 @@ def test_cli_inference_sends_luna_and_effort_and_records_unverified_actual_effor
     assert result["actual_model"] == "gpt-5.6-luna"
     assert result["actual_effort"] is None
     assert result["actual_effort_status"] == "unverifiable"
-    assert observed["arguments"][observed["arguments"].index("--endpoint") + 1] == "luna"
+    arguments = observed["arguments"]
+    assert looked_up == ["llm-kit"]
+    assert arguments[1:3] == ["completion", "complete"]
+    assert "--endpoint" not in arguments
+    assert arguments[arguments.index("--models") + 1] == "luna"
+    assert arguments[arguments.index("--model") + 1] == "gpt-5.6-luna"
     assert observed["arguments"][observed["arguments"].index("--effort") + 1] == "xhigh"
 
 

@@ -16,6 +16,7 @@ skill surfaces.
 | `content-pipeline-kit@plugins-kit` | `content-pipeline-domain`: supported; `background-pipeline`, `workflow-pipeline`, `execute-work-unit`: Claude-only because contracts require Claude `--bg`, native Workflow, and strict worker Write/allowlists |
 | `git-kit@plugins-kit` | `git-code-review`: adapted; preserve review lane and GitHub CLI prerequisites |
 | `hue-kit@plugins-kit` | `hue-domain`: adapted; preserve Hue environment/CLI, translate prompts/opener |
+| `llm-kit@plugins-kit` | `content-pipeline-domain`: supported; `background-pipeline`, `workflow-pipeline`, `execute-work-unit`: Claude-only because contracts require Claude `--bg`, native Workflow, and strict worker Write/allowlists; `openrouter-account`: adapted; preserve credential precedence and prompt secrecy |
 | `llm-scripting-kit@plugins-kit` | `openrouter-account`: adapted; preserve credential precedence and prompt secrecy |
 | `secrets-kit@plugins-kit` | `secrets-kit`: adapted; invoke installed `bin/secrets-kit`, use a real terminal for tty passphrase verbs |
 | `skills-kit@plugins-kit` | `knowledge-encoding`, `md-domain`, `update-documentation`: adapted; `materialized-output`: supported |

@@ -197,11 +197,31 @@
   },
   "git-kit@plugins-kit/git-code-review": {
     "status": "adapted",
-    "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation. Translate Agent, Workflow, AskUserQuestion, and Claude reviewer types; preserve review data locations. When md-domain Workflow is unavailable or rejects an installed detect script, follow the installed manual-detect contract through the configured llm-scripting-kit CLI: send each file's exact instantiated lanePrompt and FILE_FINDINGS_SCHEMA from that script, request one JSON object, and preserve the lane's model and effort. For the review-mode skill-detect lane, use the opus endpoint with --model opus --effort high. Validate each response against the installed schema, then apply the installed reducer and totals calculation with the original claimed-file inputs. Preparation alone, an unavailable model/effort pin, or a missing or invalid response means REVIEW INCOMPLETE."
+    "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation. Translate Agent, Workflow, AskUserQuestion, and Claude reviewer types; preserve review data locations. When md-domain Workflow is unavailable or rejects an installed detect script, follow the installed manual-detect contract through the configured llm-kit CLI (`llm-kit completion complete`): send each file's exact instantiated lanePrompt and FILE_FINDINGS_SCHEMA from that script, request one JSON object, and preserve the lane's model and effort. For the review-mode skill-detect lane, use --models opus --effort high. Validate each response against the installed schema, then apply the installed reducer and totals calculation with the original claimed-file inputs. Preparation alone, an unavailable model/effort pin, or a missing or invalid response means REVIEW INCOMPLETE."
   },
   "hue-kit@plugins-kit/hue-domain": {
     "status": "adapted",
     "instructions": "Use HUE_BRIDGE_IP plus HUE_APP_KEY/HUE_KEY_FILE; replace Claude AskUserQuestion/browser-open interactions with Codex equivalents and retain report-validate-apply ordering."
+  },
+  "llm-kit@plugins-kit/background-pipeline": {
+    "status": "claude-only",
+    "instructions": "Requires Claude --bg sessions, dispatcher leases, and Claude status surfaces; direct the user to Claude."
+  },
+  "llm-kit@plugins-kit/content-pipeline-domain": {
+    "status": "supported",
+    "instructions": "Live backends require the provisioned llm_kit and bootstrap_lib shared imports; select codex-cli when appropriate."
+  },
+  "llm-kit@plugins-kit/execute-work-unit": {
+    "status": "claude-only",
+    "instructions": "Requires Claude background worker launch prompts and Write-tool allowlists; direct the user to Claude."
+  },
+  "llm-kit@plugins-kit/openrouter-account": {
+    "status": "adapted",
+    "instructions": "Adapt the ! prefix and hidden-prompt wording; preserve key precedence and the shared ~/.claude credential contract."
+  },
+  "llm-kit@plugins-kit/workflow-pipeline": {
+    "status": "claude-only",
+    "instructions": "Requires the native Workflow agent()/parallel() tool contract; direct the user to Claude."
   },
   "llm-scripting-kit@plugins-kit/openrouter-account": {
     "status": "adapted",

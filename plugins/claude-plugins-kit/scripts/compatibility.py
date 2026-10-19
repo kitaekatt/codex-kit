@@ -493,12 +493,12 @@ def run_inference(
                     "requested_effort": requested_effort, "actual_model": None,
                     "actual_effort": None, "reason": f"inference failed: {exc}"}
     else:
-        command = executable or shutil.which("llm-scripting-kit")
+        command = executable or shutil.which("llm-kit")
         if not command:
             return {"status": "deferred", "requested_model": requested_model,
                     "requested_effort": requested_effort, "actual_model": None,
                     "actual_effort": None, "reason": "inference executor unavailable"}
-        args = [command, "complete", "--endpoint", "luna", "--format", "json",
+        args = [command, "completion", "complete", "--models", "luna", "--format", "json",
                 "--model", requested_model, "--effort", requested_effort, "--prompt", prompt]
         try:
             completed = subprocess.run(args, text=True, capture_output=True, timeout=timeout, shell=False)

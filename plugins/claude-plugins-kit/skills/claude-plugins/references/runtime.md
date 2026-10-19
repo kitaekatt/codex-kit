@@ -23,7 +23,7 @@ Locate this installed gateway skill. The plugin root is three directories above 
 
 Each generated skill has `compatibility/<skill-folder>.json` beside its forwarding wrapper. The report has a generation ID, source identity and digest, analyzer version, per-requirement evidence and status, inference metadata, and capability profile/mapping versions. The wrapper records the same generation ID. The bridge replaces the wrapper tree and its reports together, then checks that source files did not change during scaffold refresh. A runtime source, profile, or mapping change makes the report stale.
 
-The deterministic extractor currently recognizes the frontmatter list `required_capabilities`. Each item is a host capability identifier. Natural-language lines beginning with `Requires` may be sent for optional semantic extraction. Inference is not run during ordinary source resolution or command use. A scaffold refresh selects the configured model and effort explicitly. Its default is `gpt-5.6-luna` with `xhigh`; it uses the configured `luna` endpoint. The local file `inference-config.json` under the bridge data root can override `inference.model` and `inference.effort`:
+The deterministic extractor currently recognizes the frontmatter list `required_capabilities`. Each item is a host capability identifier. Natural-language lines beginning with `Requires` may be sent for optional semantic extraction. Inference is not run during ordinary source resolution or command use. A scaffold refresh selects the configured model and effort explicitly. Its default is `gpt-5.6-luna` with `xhigh`; it uses the `luna` model entry of the llm-kit registry. The local file `inference-config.json` under the bridge data root can override `inference.model` and `inference.effort`:
 
 ```json
 {
@@ -34,7 +34,7 @@ The deterministic extractor currently recognizes the frontmatter list `required_
 }
 ```
 
-If `llm-scripting-kit` is unavailable, the request fails, or the returned model differs from the selected model, deterministic findings remain and the report marks semantic analysis deferred. The bridge does not select a replacement model. The inference CLI reports the actual model but not actual effort. The report records the requested effort and that it was explicitly sent; actual effort remains `null` with status `unverifiable` when the endpoint omits it. Deferred inference is not stored as a successful inference-cache result.
+If `llm-kit` is unavailable, the request fails, or the returned model differs from the selected model, deterministic findings remain and the report marks semantic analysis deferred. The bridge does not select a replacement model. The inference CLI reports the actual model but not actual effort. The report records the requested effort and that it was explicitly sent; actual effort remains `null` with status `unverifiable` when the endpoint omits it. Deferred inference is not stored as a successful inference-cache result.
 
 The generic `capability-profile.json` and `capability-mappings.json` files shipped with the bridge define the host profile and explicit equivalence mappings. User-local files with those names under the bridge data root override the shipped files. A mapping must name both its requirement and host capability. Optional `adapter`, `preserves`, and `does_not_preserve` fields describe partial behavior; an adapter does not imply full equivalence. Reports use `available`, `mapped`, `partial`, `unavailable`, and `unmapped` per requirement.
 
