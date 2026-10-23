@@ -27,8 +27,7 @@ def active_bridge(bridge: Any, runner: Any) -> Mapping[str, Any] | None:
     return records[0] if records and records[0].get("enabled") is not False else None
 
 
-def release_candidate(bridge: Any, marketplace: Mapping[str, Any]) -> tuple[Path, dict[str, Any]]:
-    migration = bridge._migration_module()
+def release_candidate(migration: Any, marketplace: Mapping[str, Any]) -> tuple[Path, dict[str, Any]]:
     if not isinstance(marketplace.get("root"), str):
         raise ValueError("bridge marketplace has no root")
     root = Path(marketplace["root"])
@@ -113,19 +112,20 @@ def update_release(*, bridge: Any, env: Mapping[str, str], runner: Any,
         return None
     state["last_attempt"] = now
     bridge.atomic_write(state_path, json.dumps(state, sort_keys=True) + "\n")
+    # Marketplace upgrade can retire the running payload before candidate verification.
+    migration = bridge._migration_module()
     result = bridge.json_command(runner, ["plugin", "marketplace", "upgrade", "codex-kit", "--json"], "bridge release check")
     if not isinstance(result, dict):
         raise ValueError("bridge marketplace upgrade returned an invalid result")
     if result.get("errors"):
         raise ValueError(f"bridge marketplace upgrade failed: {result['errors']}")
-    _, manifest = release_candidate(bridge, marketplace)
+    _, manifest = release_candidate(migration, marketplace)
     new_root = None
     if release_version(manifest.get("version")) > release_version(current.get("version")):
         # Recheck disable/removal after the network wait; never resurrect an opt-out.
         if active_bridge(bridge, runner) is None:
             return None
         # Native add can retire the running release's files immediately.
-        migration = bridge._migration_module()
         raw_home, codex_home = migration._resolve_codex_home(env)
         installed = bridge.json_command(runner, ["plugin", "add", PLUGIN_ID, "--json"], "bridge release install")
         if not isinstance(installed, dict) or installed.get("pluginId") != PLUGIN_ID or installed.get("version") != manifest["version"] or not isinstance(installed.get("installedPath"), str):

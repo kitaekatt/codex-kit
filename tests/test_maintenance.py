@@ -190,7 +190,7 @@ def test_lock_contention_leaves_catalog_untouched(bridge, tmp_path):
     assert not any(call[:2] == ("plugin", "add") for call in runner.calls)
 
 
-@pytest.mark.parametrize("behavior", ["success", "retire-old", "failure", "verify", "disabled", "removed", "source-warning"])
+@pytest.mark.parametrize("behavior", ["success", "retire-old", "retire-on-upgrade", "failure", "verify", "disabled", "removed", "source-warning"])
 def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch, behavior):
     env, _, _ = source_fixture(tmp_path)
     real_home = tmp_path / "codex-home"
@@ -208,7 +208,7 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
     shutil.copytree(candidate, installed_root)
     reported_installed_root = alias_home / "plugins/cache/codex-kit/claude-plugins-kit/9.0.0"
     old_root = real_home / "plugins/cache/codex-kit/claude-plugins-kit/1.0.0"
-    if behavior == "retire-old":
+    if behavior in {"retire-old", "retire-on-upgrade"}:
         shutil.copytree(candidate, old_root)
         bridge = bridge._migration_module()._load_installed_bridge(old_root)
     if behavior == "verify":
@@ -221,6 +221,8 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
         def run(self, arguments):
             result = super().run(arguments)
             if tuple(arguments) == ("plugin", "marketplace", "upgrade", "codex-kit", "--json"):
+                if behavior == "retire-on-upgrade":
+                    shutil.rmtree(old_root)
                 if behavior == "disabled":
                     self.installed[0]["enabled"] = False
                 if behavior == "removed":
@@ -262,11 +264,11 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
         assert result["warnings"] == ["Refreshed source warning."]
         assert result["message"].count("Refreshed source warning.") == 1
         assert "Old source warning." not in result["message"]
-    elif behavior in {"success", "retire-old"}:
+    elif behavior in {"success", "retire-old", "retire-on-upgrade"}:
         assert result.get("bridge_updated") is True, result
         assert calls and "--respect-disabled" in calls[0]
         assert not result["warnings"]
-        if behavior == "retire-old":
+        if behavior in {"retire-old", "retire-on-upgrade"}:
             assert not old_root.exists()
             assert json.loads((Path(env["CODEX_KIT_DATA_ROOT"]) / "maintenance.json").read_text())["last_success"] > 0
     elif behavior in {"failure", "verify"}:
