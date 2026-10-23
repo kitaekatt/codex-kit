@@ -858,8 +858,9 @@ def _load_installed_bridge(installed_root: Path) -> ModuleType:
 
 
 def _expected_generated(
-    installed_root: Path, env: Mapping[str, str], skipped: Sequence[str]
-) -> tuple[dict[str, tuple[str, dict[str, str], Path]], set[str]]:
+    installed_root: Path, env: Mapping[str, str], skipped: Sequence[str],
+    installed: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, tuple[str, dict[str, str], Path]], set[str], list[dict[str, Any]]]:
     bridge = _load_installed_bridge(installed_root)
     try:
         paths = bridge.paths_for(env, installed_root / "scripts" / "bridge.py")
@@ -875,9 +876,17 @@ def _expected_generated(
         raise MigrationError(f"gateway sync omitted duplicate-source diagnostics: {duplicates}")
     expected: dict[str, tuple[str, dict[str, str], Path]] = {}
     skills: set[str] = set()
+    native_skills: list[dict[str, Any]] = []
     compatibility = bridge._compatibility_module()
     for source in sources:
         if source.name in skipped_set:
+            continue
+        try:
+            source = bridge.native_complement(source, installed, env)
+        except bridge.BridgeError as exc:
+            raise MigrationError(f"cannot verify native skill overrides: {exc}") from exc
+        native_skills.extend(source.native_coverage)
+        if not source.skills:
             continue
         root = paths.plugins_root / source.name
         reports: dict[str, Mapping[str, Any]] = {}
@@ -906,7 +915,7 @@ def _expected_generated(
         version = json.loads(files["plugin.json"])["version"]
         expected[source.name] = (version, files, root)
         skills.update(f"{source.name}:{skill.folder}" for skill in source.skills)
-    return expected, skills
+    return expected, skills, native_skills
 
 
 def _verify_catalog(
@@ -916,7 +925,7 @@ def _verify_catalog(
     env: Mapping[str, str],
     discoverer: SkillDiscoverer,
     skipped: Sequence[str],
-) -> tuple[dict[str, str], set[str], list[dict[str, Any]]]:
+) -> tuple[dict[str, str], set[str], list[dict[str, Any]], list[dict[str, Any]]]:
     catalog = _catalog(runner)
     authored = [item for item in catalog["installed"] if item.get("pluginId") == AUTHORED_ID]
     if len(authored) != 1:
@@ -932,7 +941,9 @@ def _verify_catalog(
         )
     raw_home, codex_home = _resolve_codex_home(env)
     _verify_installed_root(installed_root, codex_home, expected_version, raw_home)
-    expected_plugins, expected_skills = _expected_generated(installed_root, env, skipped)
+    expected_plugins, expected_skills, native_skills = _expected_generated(
+        installed_root, env, skipped, catalog["installed"]
+    )
     generated_records = [
         item for item in catalog["installed"] if item.get("marketplaceName") == GENERATED_MARKETPLACE
     ]
@@ -1010,7 +1021,23 @@ def _verify_catalog(
         expected_content = expected_plugins[plugin][1][f"skills/{folder}/SKILL.md"]
         if path.read_text(encoding="utf-8") != expected_content:
             raise MigrationError(f"generated skill content is stale: {qualified}")
-    return versions, expected_skills, discovered
+    for native in native_skills:
+        plugin, marketplace = native["plugin_id"].split("@", 1)
+        root = codex_home / "plugins" / "cache" / marketplace / plugin / native["version"]
+        for skill in native["reserved_skills"]:
+            qualified = f"{plugin}:{skill}"
+            item = by_name.get(qualified)
+            if not native["enabled"]:
+                if item and item.get("enabled") is not False:
+                    raise MigrationError(f"disabled native skill is unexpectedly available: {qualified}")
+                continue
+            expected_path = root / native["skill_paths"][skill]
+            if (not item or item.get("pluginId") != native["plugin_id"]
+                    or item.get("enabled") is False or not isinstance(item.get("path"), str)
+                    or Path(item["path"]).resolve() != expected_path.resolve()
+                    or _sha256(expected_path.read_bytes()) != native["skill_digests"][skill]):
+                raise MigrationError(f"native skill override is absent, changed, or has the wrong provider: {qualified}")
+    return versions, expected_skills, discovered, native_skills
 
 
 def _artifact_record(artifact: Artifact) -> dict[str, Any]:
@@ -1537,7 +1564,7 @@ def migrate(
         phase = "verify"
         journal["phase"] = phase
         _write_journal(journal_path, journal)
-        versions, expected_skills, _ = _verify_catalog(
+        versions, expected_skills, _, native_skills = _verify_catalog(
             runner,
             installed_root,
             expected_version,
@@ -1546,7 +1573,10 @@ def migrate(
             skipped,
         )
         collision_identities, retired_identities = _identity_statuses(
-            list(legacy.get("identities", [])), expected_skills, skipped
+            list(legacy.get("identities", [])), expected_skills | {
+                f"{item['plugin_id'].split('@', 1)[0]}:{skill}"
+                for item in native_skills for skill in item["reserved_skills"]
+            }, skipped
         )
         native = {
             "installed": True,
@@ -1557,6 +1587,7 @@ def migrate(
             "skipped": sorted(skipped),
             "collision_identities": collision_identities,
             "retired_identities": retired_identities,
+            "native_skills": native_skills,
         }
         journal["native"] = native
         phase = "cleanup"

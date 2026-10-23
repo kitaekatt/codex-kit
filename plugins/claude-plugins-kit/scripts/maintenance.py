@@ -183,7 +183,7 @@ def maintain(*, bridge: Any, env: Mapping[str, str], runner: Any,
                     result["message"] = "Claude Plugins Kit updated through Codex. " + result["message"]
             except (ValueError, OSError, subprocess.SubprocessError, RuntimeError) as exc:
                 warnings.append(f"Automatic bridge release update incomplete; it will retry: {exc}")
-            result["warnings"] = warnings
+            result["warnings"] = [*result.get("warnings", []), *warnings]
             if warnings:
                 result["message"] += " " + " ".join(warnings)
             return result

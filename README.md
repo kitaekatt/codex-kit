@@ -15,7 +15,7 @@ Start a new Codex thread so that Codex discovers the gateway skill. Invoke `clau
 
 Codex 0.154.0 loads the bundled SessionStart hook. An older package included a second manifest that shadowed the native manifest and prevented hook discovery. Review and trust the hook through `/hooks`; changed hook definitions require review again. On startup and resume, the trusted hook runs `maintain --startup` to converge the catalog and check for newer official bridge releases.
 
-The generated marketplace is named `claude-plugins-kit-generated`. It is a marketplace name, not one plugin selector. It contains one wrapper plugin for each installed Claude plugin that exposes skills, plus `claude-user` when personal skills exist. The bridge installs selectors such as `awesome-kit@claude-plugins-kit-generated` itself.
+The generated marketplace is named `claude-plugins-kit-generated`. It contains wrapper plugins for eligible Claude skills, plus `claude-user` for personal skills. Native adapters retain their skills. Wrappers expose the remaining skills from the same Claude plugin. The bridge installs selectors such as `awesome-kit@claude-plugins-kit-generated` itself.
 
 To refresh manually from a source checkout:
 
@@ -55,7 +55,7 @@ continues through its installed launcher. It verifies the native catalog before
 it removes exact-owned old artifacts. For an eligible replacement, it verifies
 the native plugin before it removes the old stub. Reported retired and collision
 identities are not eligible replacements. Cleanup handles them by their reported
-dispositions. Native plugins win collisions.
+dispositions. Native adapters retain their matching skills.
 
 The migration stores the backup and journal in `migration-backups/` under the
 data root. This directory is outside Git worktrees and the generated
@@ -90,7 +90,7 @@ Maintenance reports legacy artifacts and interrupted migration journals through 
 
 ## Safety and collisions
 
-- An installed native Codex plugin with the same name wins. Its generated wrapper is skipped and the native plugin is never modified.
+- Native adapters retain matching skills. The bridge forwards the other skills and preserves native plugin files. See the [maintenance contract](plugins/claude-plugins-kit/skills/claude-plugins/references/maintenance.md) for coverage and moved-skill diagnostics.
 - Duplicate Claude plugin names from different marketplaces are both skipped.
 - Invalid or missing registries, skill roots, manifests, installed paths, Codex listings, state, or ownership records fail closed without pruning wrappers.
 - Only exact bridge-owned wrapper trees and native selectors can be updated or removed. Foreign files block mutation and are preserved.
@@ -103,7 +103,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the reviewed compatibility boundary
 ## Development
 
 ```sh
-python3 -m pytest -q
+uv run --extra dev pytest -q
 ```
 
 The runtime uses only the Python standard library.

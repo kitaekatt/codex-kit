@@ -48,6 +48,7 @@ class PluginSource:
     skills: tuple[SkillSource, ...]
     root: Path | None = None
     wrap: bool = True
+    native_coverage: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -597,6 +598,8 @@ def rendered_plugin(
     }
     for skill_name, report in (compatibility_reports or {}).items():
         skills[f"compatibility/{skill_name}.json"] = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if source.native_coverage:
+        skills["native-coverage.json"] = json.dumps(source.native_coverage, indent=2, sort_keys=True) + "\n"
     digest = hashlib.sha256(
         (source.identity + "\0" + "".join(f"{path}\0{content}" for path, content in sorted(skills.items()))).encode()
     ).hexdigest()
@@ -841,6 +844,106 @@ def configured_marketplaces(runner: Runner) -> list[dict[str, Any]]:
     return records
 
 
+def native_skill_coverage(record: Mapping[str, Any], env: Mapping[str, str]) -> dict[str, Any]:
+    """Read the exact installed native payload, never its mutable marketplace source."""
+    identity = record["pluginId"]
+    name, marketplace, version = record["name"], record["marketplaceName"], record["version"]
+    if any(not isinstance(value, str) or not PLUGIN_NAME_RE.fullmatch(value)
+           for value in (name, marketplace)):
+        raise BridgeError(f"invalid native plugin identity: {identity}")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", version):
+        raise BridgeError(f"invalid native plugin version: {identity}")
+    enabled = record.get("enabled")
+    if not isinstance(enabled, bool):
+        raise BridgeError(f"native plugin has no boolean enabled state: {identity}")
+    home = Path(env.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser().resolve()
+    root = home / "plugins" / "cache" / marketplace / name / version
+    manifest = root / ".codex-plugin" / "plugin.json"
+    if not root.is_dir():
+        raise BridgeError(f"installed native plugin cache is missing: {identity}: {root}")
+    _safe_source_file(root, manifest)
+    document = read_json(manifest, "native plugin manifest")
+    if not isinstance(document, dict) or document.get("name") != name or document.get("version") != version:
+        raise BridgeError(f"native plugin manifest identity/version mismatch: {identity}: {manifest}")
+    declarations = document.get("skills", "./skills/" if (root / "skills").is_dir() else [])
+    if isinstance(declarations, str):
+        declarations = [declarations]
+    if not isinstance(declarations, list) or any(not isinstance(item, str) or not item for item in declarations):
+        raise BridgeError(f"invalid native skills declaration: {manifest}")
+    paths: set[Path] = set()
+    for declaration in declarations:
+        declared = root / declaration
+        if not declared.resolve().is_relative_to(root.resolve()):
+            raise BridgeError(f"native skills declaration escapes plugin: {identity}: {declaration}")
+        if declared.is_file() and declared.name == "SKILL.md":
+            paths.add(declared)
+        elif declared.is_dir():
+            paths.update(declared.rglob("SKILL.md"))
+        else:
+            raise BridgeError(f"native skill source is missing or invalid: {identity}: {declaration}")
+    names: dict[str, str] = {}
+    skill_paths: dict[str, str] = {}
+    for path in sorted(paths):
+        _safe_source_file(root, path)
+        text = path.read_text(encoding="utf-8")
+        skill_name = frontmatter_fields(text, path).get("name", "")
+        if not SKILL_NAME_RE.fullmatch(skill_name) or skill_name in names:
+            raise BridgeError(f"missing, invalid or duplicate native skill name: {identity}: {path}")
+        names[skill_name] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        skill_paths[skill_name] = path.relative_to(root).as_posix()
+    return {"plugin_id": identity, "version": version, "enabled": enabled,
+            "skills": sorted(names), "skill_digests": names, "skill_paths": skill_paths}
+
+
+def native_complement(source: PluginSource, installed: Sequence[Mapping[str, Any]],
+                      env: Mapping[str, str]) -> PluginSource:
+    coverage = [native_skill_coverage(record, env) for record in installed
+                if record["name"] == source.name and record["marketplaceName"] != GENERATED_MARKETPLACE]
+    source_names = {skill.folder for skill in source.skills}
+    for item in coverage:
+        item["source_identity"] = source.identity
+        item["reserved_skills"] = sorted(source_names.intersection(item["skills"]))
+        item["extra_skills"] = sorted(set(item["skills"]) - source_names)
+    reserved = {skill for item in coverage for skill in item["skills"]}
+    uncovered = tuple(skill for skill in source.skills if skill.folder not in reserved)
+    return PluginSource(source.name, source.identity, source.kind, uncovered, source.root,
+                        source.wrap, tuple(coverage))
+
+
+def moved_override_warnings(
+    sources: Sequence[PluginSource], overrides: Mapping[tuple[str, str], dict[str, str]]
+) -> list[str]:
+    live = {(source.identity, skill.folder) for source in sources for skill in source.skills}
+    warnings: list[str] = []
+    for (identity, folder), _ in sorted(overrides.items()):
+        if any(folder == skill and identity in {plugin, plugin.split("@", 1)[0]} for plugin, skill in live):
+            continue
+        candidates = [source for source in sources if any(skill.folder == folder for skill in source.skills)]
+        if len(candidates) == 1 and override_for(overrides, candidates[0], folder) is None:
+            warnings.append(f"Compatibility mapping may have moved: {identity}/{folder} -> {candidates[0].identity}/{folder}.")
+        elif len(candidates) > 1 and any(override_for(overrides, source, folder) is None for source in candidates):
+            names = ", ".join(f"{source.identity}/{folder}" for source in candidates)
+            warnings.append(f"Compatibility mapping has ambiguous destinations: {identity}/{folder} -> {names}.")
+    return warnings
+
+
+def native_coverage_message(native_skills: Mapping[str, Sequence[Mapping[str, Any]]]) -> str:
+    active = [f"{item['plugin_id']}: {', '.join(item['reserved_skills'])}"
+              for coverage in native_skills.values() for item in coverage
+              if item["enabled"] and item["reserved_skills"]]
+    inactive = [f"{item['plugin_id']}: {', '.join(item['reserved_skills'])}"
+                for coverage in native_skills.values() for item in coverage
+                if not item["enabled"] and item["reserved_skills"]]
+    extras = [f"{item['plugin_id']}: {', '.join(item['extra_skills'])}"
+              for coverage in native_skills.values() for item in coverage if item["extra_skills"]]
+    message = " Native skill overrides: " + "; ".join(active) + "." if active else ""
+    if inactive:
+        message += " Reserved by disabled native plugins (unavailable): " + "; ".join(inactive) + "."
+    if extras:
+        message += " Native-only skills (outside Claude source coverage): " + "; ".join(extras) + "."
+    return message
+
+
 def marketplace_document(names: Sequence[str]) -> str:
     entries = [
         {
@@ -869,7 +972,7 @@ def run_plain(runner: Runner, arguments: Sequence[str], label: str) -> None:
 
 def sync(
     *, env: Mapping[str, str], runner: Runner, script: Path | None = None,
-    install: bool = False, respect_disabled: bool = False
+    install: bool = False, respect_disabled: bool = True
 ) -> dict[str, Any]:
     paths = paths_for(env, script)
     with FileLock(paths.lock_file):
@@ -932,33 +1035,41 @@ def sync(
                         if record["marketplaceName"] == GENERATED_MARKETPLACE
                         and record["pluginId"] == f"{name}@{GENERATED_MARKETPLACE}"
                     }
-            native_collisions = sorted(
-                source.name
-                for source in sources
-                if any(
-                    not (
-                        record["marketplaceName"] == GENERATED_MARKETPLACE
-                        and source.name in owned_installed
-                    )
-                    for record in installed_by_name.get(source.name, [])
-                )
-            )
             configured_exclusions = sorted(
                 source.name for source in sources
                 if source.identity in excluded or source.name in excluded
             )
             manifest_exclusions = sorted(source.name for source in sources if not source.wrap)
             skipped = sorted(
-                set(duplicates) | set(native_collisions)
+                set(duplicates)
                 | set(configured_exclusions) | set(manifest_exclusions)
             )
             disabled = {
                 source.name for source in sources
                 if respect_disabled and source.name in owned_installed
-                and any(record.get("enabled") is False for record in installed_by_name[source.name])
+                and any(record["marketplaceName"] == GENERATED_MARKETPLACE and record.get("enabled") is False
+                        for record in installed_by_name[source.name])
                 and source.name not in skipped
             }
-            desired_sources = [source for source in sources if source.name not in skipped and source.name not in disabled]
+            warnings = moved_override_warnings(sources, overrides)
+            source_skills = {source.identity: [skill.folder for skill in source.skills] for source in sources}
+            native_skills: dict[str, list[dict[str, Any]]] = {}
+            forwarded_skills: dict[str, list[str]] = {}
+            desired_sources: list[PluginSource] = []
+            for source in sources:
+                if source.name in skipped or source.name in disabled:
+                    continue
+                if source.name not in owned_installed and any(
+                    record["marketplaceName"] == GENERATED_MARKETPLACE
+                    for record in installed_by_name.get(source.name, [])
+                ):
+                    raise BridgeError(f"refusing to update unowned generated plugin: {source.name}")
+                complement = native_complement(source, installed_by_name.get(source.name, []), env)
+                if complement.native_coverage:
+                    native_skills[source.name] = list(complement.native_coverage)
+                forwarded_skills[source.name] = [skill.folder for skill in complement.skills]
+                if complement.skills:
+                    desired_sources.append(complement)
             rendered: dict[str, tuple[dict[str, str], str, PluginSource]] = {}
             for source in desired_sources:
                 if source.root is None:
@@ -1024,6 +1135,9 @@ def sync(
                     if changed
                     else "Claude wrapper plugins are current."
                 )
+                message += native_coverage_message(native_skills)
+                if warnings:
+                    message += " " + " ".join(warnings)
                 return {
                     "status": "changed" if changed else "unchanged",
                     "changed": changed,
@@ -1032,6 +1146,11 @@ def sync(
                     "creates_or_updates": len(source_changes),
                     "removes": len(removals),
                     "skipped": skipped,
+                    "native_skills": native_skills,
+                    "forwarded_skills": forwarded_skills,
+                    "warnings": warnings,
+                    "source_skills": source_skills,
+                    "disabled": sorted(disabled),
                 }
 
             for name in source_changes:
@@ -1039,6 +1158,13 @@ def sync(
                 check_owned_tree(root)
             for name in removals:
                 check_owned_tree(paths.plugins_root / name)
+
+            latest_installed = installed_plugins(runner)
+            for source in sources:
+                if source.name in skipped or source.name in disabled:
+                    continue
+                if list(native_complement(source, latest_installed, env).native_coverage) != native_skills.get(source.name, []):
+                    raise BridgeError(f"native skill coverage changed during scaffold refresh: {source.name}")
 
             ensure_marketplace_root(paths)
             next_state = {"schema": STATE_SCHEMA, "plugins": dict(state["plugins"])}
@@ -1140,6 +1266,9 @@ def sync(
                 message += " Skipped collisions: " + ", ".join(collision_skips) + "."
             if disabled:
                 message += " Left disabled plugins unchanged: " + ", ".join(sorted(disabled)) + "."
+            message += native_coverage_message(native_skills)
+            if warnings:
+                message += " " + " ".join(warnings)
             return {
                 "status": "changed" if changed else "unchanged",
                 "changed": changed,
@@ -1149,6 +1278,10 @@ def sync(
                 "removes": len(removals),
                 "skipped": skipped,
                 "disabled": sorted(disabled),
+                "native_skills": native_skills,
+                "forwarded_skills": forwarded_skills,
+                "warnings": warnings,
+                "source_skills": source_skills,
             }
         except (BridgeError, OSError, UnicodeError, ValueError) as exc:
             return {
@@ -1538,7 +1671,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     sync_parser = subparsers.add_parser("sync")
     sync_parser.add_argument("--install", action="store_true")
     sync_parser.add_argument("--startup", action="store_true")
-    sync_parser.add_argument("--respect-disabled", action="store_true")
+    sync_parser.add_argument("--respect-disabled", action="store_true", default=True)
     maintenance_parser = subparsers.add_parser("maintain")
     maintenance_parser.add_argument("--startup", action="store_true")
     maintenance_parser.add_argument("--check-updates", action="store_true")

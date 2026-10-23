@@ -3,6 +3,10 @@
     "status": "adapted",
     "instructions": "Preserve the installed skill's root-cause-first procedure and evidence requirements. Use available Codex tools for its Claude tool calls; do not invent a missing swarm or native Workflow runtime."
   },
+  "awesome-kit@plugins-kit/arewedone": {
+    "status": "adapted",
+    "instructions": "Perform the session-completion audit with Codex context and tools. Preserve scope, ownership, standing authorizations, and the source stopping rule."
+  },
   "awesome-kit@plugins-kit/debug-context": {
     "status": "adapted",
     "instructions": "Use Codex delegation when available; preserve established/hypothesis labels and answer-first behavior."
@@ -231,6 +235,10 @@
     "status": "adapted",
     "instructions": "Use installed preparation/profile/endpoint scripts and Codex review delegation with the real P4 workspace. Translate Claude reviewer and validator fan-out."
   },
+  "presence-kit@plugins-kit/recap": {
+    "status": "adapted",
+    "instructions": "Use Codex user input for the optional interview and preserve the two-phase text-first contract. Do not invent Claude hook prompt ids or session state, or claim a recap-done call succeeded without its result."
+  },
   "prototyping@spryfox-plugins/codemap": {
     "status": "adapted",
     "instructions": "Use the source index/query procedure; preserve its project-specific config-index assumptions."
@@ -278,6 +286,10 @@
   "skills-kit@plugins-kit/update-documentation": {
     "status": "adapted",
     "instructions": "Preserve the explicit user approval pause before documentation edits. When the source's md-domain skill condition applies, load its Codex forwarding wrapper before its canonical skill."
+  },
+  "task-kit@plugins-kit/task": {
+    "status": "adapted",
+    "instructions": "Use the installed runtime with explicit project root. Route emitted skill calls through Codex forwarding stubs and translate orchestration/handoff protocol to available Codex facilities."
   },
   "unreal-kit@plugins-kit/fix-up-redirectors": {
     "status": "adapted",

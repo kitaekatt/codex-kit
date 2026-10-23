@@ -42,7 +42,11 @@ Inference and resolution caches are separate under `compatibility-cache/`. Infer
 
 Translate `${CLAUDE_PLUGIN_ROOT}` to `source_root` and `${CLAUDE_SKILL_DIR}` to the canonical skill folder. Resolve ordinary supporting files, scripts, and assets from that canonical folder.
 
-For a skill dependency, first locate its forwarding wrapper in the available Codex skills catalog by matching source identity and skill metadata, including `source-kind: personal` for personal skills. Read that wrapper and apply its compatibility instructions before reading any canonical `SKILL.md`. This procedure covers `Skill(...)` calls, slash commands, bare skill names, relative or sibling `SKILL.md` paths, and entries in `required_skills` that identify actual skills; other entries remain host capability requirements. A native skill may substitute only when a documented bridge mapping identifies the dependency; a same-name collision alone is insufficient. Report a missing, ambiguous, stale, disabled, or Claude-only wrapper instead of loading its Claude source directly.
+For a skill dependency, first locate its forwarding wrapper in the available Codex skills catalog by matching source identity and skill metadata, including `source-kind: personal` for personal skills. Read that wrapper and apply its compatibility instructions before reading any canonical `SKILL.md`. This procedure covers `Skill(...)` calls, slash commands, bare skill names, relative or sibling `SKILL.md` paths, and entries in `required_skills` that identify actual skills; other entries remain host capability requirements.
+
+A native skill can substitute only through an explicit bridge mapping. The synchronization result's `native_skills` records provide that mapping: match the canonical `source_identity` and the dependency in `reserved_skills`. Select the recorded native `plugin_id`, and require `enabled: true`. Then read its installed native skill instructions. A native-only `extra_skills` entry does not replace a canonical dependency. A shared plugin or skill name alone is insufficient.
+
+Report a missing, ambiguous, stale, disabled, or Claude-only wrapper or native mapping instead of loading its Claude source directly. Coverage and moved-override diagnostics are defined in [the maintenance contract](maintenance.md).
 
 For plugin skills, resolve `skills/<name>/SKILL.md` against `source_root` and sibling `../<name>/SKILL.md` against the current canonical skill folder. Match the resulting path to the wrapper's `source-relative-path` metadata.
 

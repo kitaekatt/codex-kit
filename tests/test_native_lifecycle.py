@@ -382,6 +382,49 @@ def test_installed_bridge_drives_native_skill_catalog_lifecycle(tmp_path: Path) 
     )
 
 
+def test_installed_bridge_complements_partial_native_skill_coverage(tmp_path: Path) -> None:
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    (cwd / ".git").mkdir()
+    plugin_root = tmp_path / "claude-cache" / "awesome-kit" / "1.0.0"
+    write_skill(plugin_root, "orchestrate", "Canonical orchestration.")
+    write_skill(plugin_root, "arewedone", "Audit completion.")
+    registry = tmp_path / "claude" / "plugins" / "installed_plugins.json"
+    write_registry(registry, plugin_root)
+    env = isolated_environment(tmp_path, registry, tmp_path / "claude" / "skills")
+    installed_path = install_bridge(env, cwd)
+    launcher = launcher_command(installed_path)
+    market = tmp_path / "native-market"
+    native = market / "plugins" / "awesome-kit"
+    manifest = native / ".codex-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": "awesome-kit", "version": "1.0.0", "skills": "./skills/"}))
+    write_skill(native, "orchestrate", "Native orchestration.")
+    listing = market / ".agents" / "plugins" / "marketplace.json"
+    listing.parent.mkdir(parents=True)
+    listing.write_text(json.dumps({"name": "native-test", "plugins": [{
+        "name": "awesome-kit", "source": {"source": "local", "path": "./plugins/awesome-kit"},
+        "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+        "category": "Developer Tools",
+    }]}))
+    json_command([CODEX or "codex", "plugin", "marketplace", "add", str(market), "--json"], env, cwd)
+    json_command([CODEX or "codex", "plugin", "add", "awesome-kit@native-test", "--json"], env, cwd)
+    result = sync_installed_bridge(launcher, env, cwd)
+    assert result["forwarded_skills"]["awesome-kit"] == ["arewedone"]
+    catalog = skills_by_name(app_server_skills(env, cwd))
+    assert catalog["awesome-kit:orchestrate"]["pluginId"] == "awesome-kit@native-test"
+    assert catalog["awesome-kit:arewedone"]["pluginId"] == f"awesome-kit@{GENERATED_MARKETPLACE}"
+    write_skill(plugin_root, "added-later", "Added after native install.")
+    added = sync_installed_bridge(launcher, env, cwd)
+    assert added["catalog_changed"] is True
+    assert skills_by_name(app_server_skills(env, cwd))["awesome-kit:added-later"]["pluginId"] == f"awesome-kit@{GENERATED_MARKETPLACE}"
+    (plugin_root / "skills" / "arewedone" / "SKILL.md").unlink()
+    sync_installed_bridge(launcher, env, cwd)
+    final = skills_by_name(app_server_skills(env, cwd))
+    assert "awesome-kit:arewedone" not in final
+    assert final["awesome-kit:orchestrate"]["pluginId"] == "awesome-kit@native-test"
+
+
 def test_source_migrate_replaces_exact_legacy_bridge_with_native_plugins(
     tmp_path: Path,
 ) -> None:

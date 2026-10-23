@@ -319,14 +319,257 @@ def test_plugin_metadata_excludes_wrapper_without_user_config(bridge, tmp_path):
     assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "claude-ui-kit").exists()
 
 
-def test_native_plugin_collision_wins_without_native_mutation(bridge, tmp_path):
-    env, _, _ = source_fixture(tmp_path)
-    native = installed_record("alpha", "native-market")
+def native_fixture(env: dict[str, str], tmp_path: Path, *, skills: tuple[str, ...] = ("do-work",),
+                   enabled: bool = True, version: str = "1.0.0") -> tuple[dict[str, object], Path]:
+    home = tmp_path / "codex-home"
+    env["CODEX_HOME"] = str(home)
+    root = home / "plugins" / "cache" / "native-market" / "alpha" / version
+    manifest = root / ".codex-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps({"name": "alpha", "version": version, "skills": "./skills/"}))
+    (root / "skills").mkdir(exist_ok=True)
+    for name in skills:
+        write_skill(root / "skills", name)
+    return {**installed_record("alpha", "native-market", version), "enabled": enabled}, root
+
+
+def test_native_plugin_covers_only_actual_skills_without_native_mutation(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    native, native_root = native_fixture(env, tmp_path)
+    write_skill(roots["alpha@test"] / "skills", "new-skill")
     runner = FakeRunner(installed=[native])
     result = bridge.sync(env=env, runner=runner, install=True)
-    assert "alpha" in result["skipped"]
-    assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha").exists()
+    assert result["status"] == "changed", result
+    assert "alpha" not in result["skipped"]
+    wrapper = Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha"
+    assert (wrapper / "skills" / "new-skill" / "SKILL.md").is_file()
+    assert not (wrapper / "skills" / "do-work").exists()
+    assert result["native_skills"]["alpha"][0]["skills"] == ["do-work"]
+    assert (native_root / "skills" / "do-work" / "SKILL.md").is_file()
     assert not any(call[:2] == ("plugin", "remove") for call in runner.calls)
+    assert ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}", "--json") in runner.calls
+
+
+def test_fully_native_covered_plugin_is_reported_without_empty_wrapper(bridge, tmp_path):
+    env, _, _ = source_fixture(tmp_path)
+    native, _ = native_fixture(env, tmp_path)
+    result = bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    assert result["status"] == "changed", result
+    assert "alpha" not in result["skipped"]
+    assert result["forwarded_skills"]["alpha"] == []
+    assert result["native_skills"]["alpha"][0]["enabled"] is True
+    assert not (Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha").exists()
+
+
+def test_disabled_native_reserves_its_names_but_does_not_hide_other_skills(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    native, _ = native_fixture(env, tmp_path, enabled=False)
+    write_skill(roots["alpha@test"] / "skills", "new-skill")
+    result = bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    assert result["status"] == "changed", result
+    assert result["native_skills"]["alpha"][0]["enabled"] is False
+    assert result["forwarded_skills"]["alpha"] == ["new-skill"]
+    assert "disabled native" in result["message"].lower()
+
+
+def test_native_version_or_skill_content_change_refreshes_complement(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    native, native_root = native_fixture(env, tmp_path)
+    write_skill(roots["alpha@test"] / "skills", "new-skill")
+    first = bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    assert first["status"] == "changed", first
+    installed = [native, *generated_records(bridge, env, "alpha", "claude-user")]
+    write_skill(native_root / "skills", "do-work", "Changed installed native instructions.")
+    runner = FakeRunner(installed=installed, marketplaces=generated_marketplace(bridge, env))
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["catalog_changed"] is True, result
+    assert ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}", "--json") in runner.calls
+
+
+@pytest.mark.parametrize("corruption", ["missing-root", "bad-manifest", "wrong-version", "escape", "missing-skill-name"])
+def test_invalid_native_metadata_fails_without_pruning(bridge, tmp_path, corruption):
+    env, _, roots, _ = initial_sync(bridge, tmp_path)
+    native, root = native_fixture(env, tmp_path)
+    manifest = root / ".codex-plugin" / "plugin.json"
+    if corruption == "missing-root":
+        native["version"] = "missing"
+    elif corruption == "bad-manifest":
+        manifest.write_text("{bad")
+    elif corruption == "wrong-version":
+        manifest.write_text(json.dumps({"name": "alpha", "version": "wrong"}))
+    elif corruption == "escape":
+        manifest.write_text(json.dumps({"name": "alpha", "version": "1.0.0", "skills": "../../../../"}))
+    else:
+        (root / "skills" / "do-work" / "SKILL.md").write_text("---\ndescription: no name\n---\n")
+    wrapper = Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha"
+    before = (wrapper / "skills" / "do-work" / "SKILL.md").read_bytes()
+    runner = FakeRunner(installed=[native, *generated_records(bridge, env, "alpha", "claude-user")],
+                        marketplaces=generated_marketplace(bridge, env))
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["status"] == "error", result
+    assert (wrapper / "skills" / "do-work" / "SKILL.md").read_bytes() == before
+    assert not any(call[:2] in {("plugin", "add"), ("plugin", "remove")} for call in runner.calls)
+
+
+def test_native_frontmatter_name_not_folder_determines_precedence(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    native, root = native_fixture(env, tmp_path)
+    write_skill(roots["alpha@test"] / "skills", "actual-native-name")
+    path = root / "skills" / "do-work" / "SKILL.md"
+    path.write_text(path.read_text().replace("name: do-work", "name: actual-native-name"))
+    result = bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    assert result["forwarded_skills"]["alpha"] == ["do-work"]
+    assert result["native_skills"]["alpha"][0]["reserved_skills"] == ["actual-native-name"]
+
+
+def test_partial_native_coverage_tracks_new_moved_and_deleted_claude_skills(bridge, tmp_path):
+    env, registry, roots = source_fixture(tmp_path, ("alpha@test", "beta@test"))
+    native, _ = native_fixture(env, tmp_path)
+    source = roots["alpha@test"] / "skills"
+    write_skill(source, "new-skill")
+    first = bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    assert first["forwarded_skills"]["alpha"] == ["new-skill"]
+    installed = [native, *generated_records(bridge, env, "alpha", "beta", "claude-user")]
+    (source / "new-skill" / "SKILL.md").unlink()
+    write_skill(roots["beta@test"] / "skills", "new-skill")
+    runner = FakeRunner(installed=installed, marketplaces=generated_marketplace(bridge, env))
+    moved = bridge.sync(env=env, runner=runner, install=True)
+    assert moved["catalog_changed"] is True
+    assert moved["forwarded_skills"]["alpha"] == []
+    assert moved["forwarded_skills"]["beta"] == ["do-work", "new-skill"]
+    assert ("plugin", "remove", f"alpha@{bridge.GENERATED_MARKETPLACE}", "--json") in runner.calls
+    assert not any(call[:3] == ("plugin", "remove", "alpha@native-market") for call in runner.calls)
+
+
+@pytest.mark.parametrize("native_enabled", [True, False])
+def test_disabled_generated_complement_is_never_reenabled(bridge, tmp_path, native_enabled):
+    env, _, roots = source_fixture(tmp_path)
+    native, _ = native_fixture(env, tmp_path, enabled=native_enabled)
+    write_skill(roots["alpha@test"] / "skills", "new-skill")
+    bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    installed = [native, *generated_records(bridge, env, "alpha", "claude-user")]
+    installed[1]["enabled"] = False
+    runner = FakeRunner(installed=installed, marketplaces=generated_marketplace(bridge, env))
+    result = bridge.sync(env=env, runner=runner, install=True, respect_disabled=True)
+    assert result["disabled"] == ["alpha"]
+    assert not any(call[:3] == ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}") for call in runner.calls)
+
+
+def test_disabled_native_does_not_disable_enabled_generated_complement(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    native, _ = native_fixture(env, tmp_path, enabled=False)
+    write_skill(roots["alpha@test"] / "skills", "new-skill")
+    bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    installed = [native, *generated_records(bridge, env, "alpha", "claude-user")]
+    result = bridge.sync(env=env, runner=FakeRunner(installed=installed,
+                         marketplaces=generated_marketplace(bridge, env)), install=True, respect_disabled=True)
+    assert result["disabled"] == []
+    assert result["forwarded_skills"]["alpha"] == ["new-skill"]
+
+
+def test_moved_override_warns_without_guessing_or_inheriting(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    write_skill(roots["alpha@test"] / "skills", "moved")
+    sources, _ = bridge.installed_sources(Path(env["CLAUDE_PLUGINS_REGISTRY"]),
+                                       Path(env["CLAUDE_SKILLS_ROOT"]), Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json")
+    old = {("old@test", "moved"): {"status": "claude-only", "instructions": "old boundary"}}
+    warnings = bridge.moved_override_warnings(sources, old)
+    assert warnings == ["Compatibility mapping may have moved: old@test/moved -> alpha@test/moved."]
+    target = next(source for source in sources if source.name == "alpha")
+    assert bridge.override_for(old, target, "moved") is None
+    old[("alpha@test", "moved")] = {"status": "adapted", "instructions": "mapped explicitly"}
+    assert bridge.moved_override_warnings(sources, old) == []
+    assert bridge.moved_override_warnings(sources, {("old@test", "absent"): old[("old@test", "moved")]}) == []
+
+
+def test_preview_reports_disabled_native_and_native_only_skills(bridge, tmp_path):
+    env, _, _ = source_fixture(tmp_path)
+    native, _ = native_fixture(env, tmp_path, skills=("do-work", "native-only"), enabled=False)
+    result = bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=False)
+    assert "disabled native" in result["message"].lower()
+    assert "Native-only skills" in result["message"]
+    coverage = result["native_skills"]["alpha"][0]
+    assert coverage["source_identity"] == "alpha@test"
+    assert coverage["reserved_skills"] == ["do-work"]
+    assert coverage["extra_skills"] == ["native-only"]
+
+
+def test_native_coverage_race_does_not_publish_a_stale_complement(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path)
+    native, root = native_fixture(env, tmp_path)
+    write_skill(roots["alpha@test"] / "skills", "new-skill")
+    bridge.sync(env=env, runner=FakeRunner(installed=[native]), install=True)
+    installed = [native, *generated_records(bridge, env, "alpha", "claude-user")]
+    write_skill(roots["alpha@test"] / "skills", "new-skill", "Changed Claude source.")
+    class ChangingNative(FakeRunner):
+        listings = 0
+        def run(self, arguments):
+            if tuple(arguments) == ("plugin", "list", "--json"):
+                self.listings += 1
+                if self.listings == 2:
+                    write_skill(root / "skills", "new-skill", "Native gained this skill.")
+            return super().run(arguments)
+    runner = ChangingNative(installed=installed, marketplaces=generated_marketplace(bridge, env))
+    wrapper = Path(env["CODEX_KIT_DATA_ROOT"]) / bridge.GENERATED_MARKETPLACE / "plugins" / "alpha"
+    before = (wrapper / "plugin.json").read_bytes()
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["status"] == "error", result
+    assert "native skill coverage changed" in result["message"]
+    assert (wrapper / "plugin.json").read_bytes() == before
+    assert not any(call[:2] in {("plugin", "add"), ("plugin", "remove")} for call in runner.calls)
+
+
+def test_ambiguous_moved_override_reports_candidates_without_inheritance(bridge, tmp_path):
+    env, _, roots = source_fixture(tmp_path, ("alpha@test", "beta@test"))
+    for root in roots.values():
+        write_skill(root / "skills", "moved")
+    sources, _ = bridge.installed_sources(Path(env["CLAUDE_PLUGINS_REGISTRY"]),
+                                       Path(env["CLAUDE_SKILLS_ROOT"]), Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json")
+    old = {("old@test", "moved"): {"status": "claude-only", "instructions": "old boundary"}}
+    warnings = bridge.moved_override_warnings(sources, old)
+    assert len(warnings) == 1
+    assert "ambiguous destinations" in warnings[0]
+    assert "alpha@test/moved" in warnings[0] and "beta@test/moved" in warnings[0]
+    assert all(bridge.override_for(old, source, "moved") is None for source in sources)
+
+
+def test_manual_sync_defaults_to_preserving_disabled_generated_plugin(bridge, tmp_path):
+    env, _, roots, _ = initial_sync(bridge, tmp_path)
+    installed = generated_records(bridge, env, "alpha", "claude-user")
+    installed[0]["enabled"] = False
+    write_skill(roots["alpha@test"] / "skills", "do-work", "Changed while disabled.")
+    runner = FakeRunner(installed=installed, marketplaces=generated_marketplace(bridge, env))
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["disabled"] == ["alpha"]
+    assert result["status"] == "unchanged"
+    assert not any(call[:3] == ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}") for call in runner.calls)
+
+
+def test_unflagged_sync_command_preserves_disabled_by_default(bridge, monkeypatch):
+    observed = {}
+    def sync(**kwargs):
+        observed.update(kwargs)
+        return {"status": "unchanged", "message": "Current."}
+    monkeypatch.setattr(bridge, "sync", sync)
+    assert bridge.main(["sync", "--install"]) == 0
+    assert observed["respect_disabled"] is True
+
+
+def test_concurrent_user_disable_is_rechecked_before_install(bridge, tmp_path):
+    env, _, roots, _ = initial_sync(bridge, tmp_path)
+    installed = generated_records(bridge, env, "alpha", "claude-user")
+    write_skill(roots["alpha@test"] / "skills", "do-work", "Changed source.")
+    class DisablingRunner(FakeRunner):
+        listings = 0
+        def run(self, arguments):
+            if tuple(arguments) == ("plugin", "list", "--json"):
+                self.listings += 1
+                if self.listings == 3:
+                    self.installed[0]["enabled"] = False
+            return super().run(arguments)
+    runner = DisablingRunner(installed=installed, marketplaces=generated_marketplace(bridge, env))
+    result = bridge.sync(env=env, runner=runner, install=True)
+    assert result["disabled"] == ["alpha"]
     assert not any(call[:3] == ("plugin", "add", f"alpha@{bridge.GENERATED_MARKETPLACE}") for call in runner.calls)
 
 

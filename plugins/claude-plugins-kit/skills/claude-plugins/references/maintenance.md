@@ -18,7 +18,21 @@ policy.
 
 Generated state defaults to the platform application-data directory under `codex-kit`: `$XDG_DATA_HOME/codex-kit` or `~/.local/share/codex-kit` on Linux, `~/Library/Application Support/codex-kit` on macOS, and `%LOCALAPPDATA%\\codex-kit` on Windows. `CODEX_KIT_DATA_ROOT` overrides it. The bridge refuses a data root inside a Git worktree or through a symlink.
 
-The generated marketplace is `claude-plugins-kit-generated`. Synchronization uses native `codex plugin marketplace add`, `codex plugin add`, and `codex plugin remove`. It never edits the downloaded plugin cache for Codex. An installed native Codex plugin with the same name wins. The bridge reports and skips that wrapper. It does not modify the native plugin.
+The generated marketplace is `claude-plugins-kit-generated`. Synchronization uses native `codex plugin marketplace add`, `codex plugin add`, and `codex plugin remove`. Native adapter skills take precedence individually. The bridge reads their installed manifests and skill files, then forwards the uncovered Claude skills in the generated marketplace. It preserves native plugin files and the downloaded Codex cache.
+
+## Skill coverage
+
+Each synchronization compares Claude skills with the installed native adapter payload. Native adapter versions and skill digests participate in wrapper updates. A source move, an added skill, or an adapter change therefore triggers reconciliation without a hand-maintained skill list.
+
+The result's `source_skills` maps each discovered Claude source identity to its skill folders, including excluded sources. The `native_skills` and `forwarded_skills` maps use Claude plugin names. Each native record identifies its `source_identity` and native `plugin_id`. Its `reserved_skills` names the overlapping Claude skills. Its `extra_skills` names native skills that the Claude plugin does not expose. These records establish the native substitution mappings described in [the runtime contract](runtime.md).
+
+A disabled native adapter reserves its matching skills. Those skills remain unavailable until the user enables the adapter. Uncovered Claude skills remain eligible for forwarding. A disabled generated plugin retains its separate maintenance policy.
+
+The `warnings` list reports possible moves of compatibility overrides. A warning names an orphan override and live same-name skills that lack an effective override. It distinguishes one candidate from ambiguous destinations. The bridge does not transfer instructions by skill name alone. Legacy overrides remain valid for machines that still install the earlier source.
+
+Explicit user exclusions, plugin metadata exclusions, and duplicate Claude plugin names remain separate from native coverage. Report those dispositions with the coverage results. A successful refresh does not imply that excluded, disabled, or Claude-only skills can run.
+
+## Refresh and release checks
 
 Resolve `<launcher>` with the [runtime contract](runtime.md). Run `<launcher> maintain` for catalog and release maintenance, or `<launcher> sync --install` for a manual catalog refresh. Start a new Codex thread if a reported catalog change is not visible. Always surface current, changed, error, and warning results accurately.
 
@@ -54,12 +68,10 @@ The apply operation completes these phases in order:
 5. Verify the native catalog and all eligible native replacements.
 6. Remove only exact-owned old hooks, stubs, and state.
 
-An installed native plugin wins a name collision. The migration does not
-replace that plugin. It reports the collision identity and retires the old
-wrapper identity. For an eligible replacement, the old stub remains until the
-native replacement is verified. Reported retired and collision identities are
-not eligible replacements. Cleanup removes their exact-owned old stubs under
-their reported dispositions.
+The migration preserves native adapters. Their matching skills use native
+coverage; uncovered Claude skills use generated wrappers. For an eligible
+replacement, the old stub remains until the replacement is verified. Cleanup
+removes only exact-owned old stubs under their reported dispositions.
 
 The migration resolves the live `CODEX_HOME`. If that path is a symlink, it
 uses the target. Before native installation, it writes a backup and a journal to

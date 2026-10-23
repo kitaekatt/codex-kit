@@ -91,6 +91,27 @@ def test_local_marketplace_is_never_upgraded(bridge, tmp_path):
     assert not any(call[:3] == ("plugin", "marketplace", "upgrade") for call in runner.calls)
 
 
+@pytest.mark.parametrize("legacy_warning", [False, True])
+def test_source_mapping_warning_survives_maintenance_once(bridge, tmp_path, monkeypatch, legacy_warning):
+    env, _, _ = source_fixture(tmp_path)
+    env["CODEX_KIT_AUTO_UPDATE"] = "0"
+    monkeypatch.setattr(bridge, "load_overrides", lambda path: {
+        ("previous@test", "do-work"): {"status": "adapted", "instructions": "Moved mapping."}
+    })
+    if legacy_warning:
+        monkeypatch.setattr(bridge, "migrate", lambda **kwargs: {
+            "status": "unchanged", "migration_needed": True, "message": "Legacy artifact remains."
+        })
+    runner = FakeRunner(installed=[authored_record()], marketplaces=[])
+    result = bridge.maintain(env=env, runner=runner)
+    warning = "Compatibility mapping may have moved: previous@test/do-work -> alpha@test/do-work."
+    maintenance_warning = "Legacy bridge migration needs attention: Legacy artifact remains."
+    assert result["warnings"] == [warning, *([maintenance_warning] if legacy_warning else [])]
+    assert result["message"].count(warning) == 1
+    if legacy_warning:
+        assert result["message"].count(maintenance_warning) == 1
+
+
 @pytest.mark.parametrize("state", [[], {"schema": 2}, {"schema": 1, "last_attempt": float("nan"), "last_success": 0}])
 def test_malformed_state_preserves_local_convergence(bridge, tmp_path, state):
     env, _, _ = source_fixture(tmp_path)
@@ -169,7 +190,7 @@ def test_lock_contention_leaves_catalog_untouched(bridge, tmp_path):
     assert not any(call[:2] == ("plugin", "add") for call in runner.calls)
 
 
-@pytest.mark.parametrize("behavior", ["success", "retire-old", "failure", "verify", "disabled", "removed"])
+@pytest.mark.parametrize("behavior", ["success", "retire-old", "failure", "verify", "disabled", "removed", "source-warning"])
 def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch, behavior):
     env, _, _ = source_fixture(tmp_path)
     real_home = tmp_path / "codex-home"
@@ -212,17 +233,36 @@ def test_official_new_release_install_and_opt_out(bridge, tmp_path, monkeypatch,
                 return subprocess.CompletedProcess(arguments, 0, json.dumps({"pluginId": "claude-plugins-kit@codex-kit", "version": "9.0.0", "installedPath": str(reported_installed_root)}), "")
             return result
     runner = ReleaseRunner(installed=[authored_record()], marketplaces=[marketplace])
+    if behavior == "source-warning":
+        original_sync = bridge.sync
+        def source_sync(**kwargs):
+            result = original_sync(**kwargs)
+            result["warnings"] = ["Old source warning."]
+            result["message"] += " Old source warning."
+            return result
+        monkeypatch.setattr(bridge, "sync", source_sync)
     original_run = subprocess.run
     calls = []
     def refresh(arguments, **kwargs):
         expected_launcher = installed_root / "scripts" / ("launch.cmd" if sys.platform == "win32" else "launch.sh")
         if str(expected_launcher) in arguments:
             calls.append(arguments)
+            if behavior == "source-warning":
+                return subprocess.CompletedProcess(arguments, 0, json.dumps({
+                    "status": "unchanged", "changed": False,
+                    "message": "Current. Refreshed source warning.",
+                    "warnings": ["Refreshed source warning."],
+                }), "")
             return subprocess.CompletedProcess(arguments, 0, json.dumps({"status": "unchanged", "changed": False, "message": "Current."}), "")
         return original_run(arguments, **kwargs)
     monkeypatch.setattr(subprocess, "run", refresh)
     result = bridge.maintain(env=env, runner=runner)
-    if behavior in {"success", "retire-old"}:
+    if behavior == "source-warning":
+        assert result.get("bridge_updated") is True, result
+        assert result["warnings"] == ["Refreshed source warning."]
+        assert result["message"].count("Refreshed source warning.") == 1
+        assert "Old source warning." not in result["message"]
+    elif behavior in {"success", "retire-old"}:
         assert result.get("bridge_updated") is True, result
         assert calls and "--respect-disabled" in calls[0]
         assert not result["warnings"]

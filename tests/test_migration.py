@@ -150,7 +150,7 @@ class SuccessfulRunner:
             manifest = json.loads(
                 (self.installed_root / ".codex-plugin" / "plugin.json").read_text()
             )
-            self.installed = [
+            self.installed = [item for item in self.installed if item.get("pluginId") != "claude-plugins-kit@codex-kit"] + [
                 {
                     "pluginId": "claude-plugins-kit@codex-kit",
                     "name": "claude-plugins-kit",
@@ -171,7 +171,7 @@ class SuccessfulRunner:
 
 
 def successful_native(
-    bridge, tmp_path: Path, env: dict[str, str]
+    bridge, tmp_path: Path, env: dict[str, str], native_skills: tuple[str, ...] | None = None,
 ) -> tuple[SuccessfulRunner, object, object]:
     repository = Path(__file__).parents[1]
     authored = repository / "plugins" / "claude-plugins-kit"
@@ -182,6 +182,18 @@ def successful_native(
     installed_root = codex_home / "plugins" / "cache" / "codex-kit" / "claude-plugins-kit" / version
     shutil.copytree(authored, installed_root)
     runner = SuccessfulRunner(repository, installed_root)
+    native_root = codex_home / "plugins" / "cache" / "native-market" / "awesome" / "1.0.0"
+    if native_skills is not None:
+        manifest = native_root / ".codex-plugin" / "plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text(json.dumps({"name": "awesome", "version": "1.0.0", "skills": "./skills/"}))
+        for skill in native_skills:
+            path = native_root / "skills" / skill / "SKILL.md"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"---\nname: {skill}\ndescription: Native skill.\n---\n")
+        runner.installed.append({"pluginId": "awesome@native-market", "name": "awesome",
+                                 "marketplaceName": "native-market", "version": "1.0.0",
+                                 "installed": True, "enabled": True})
 
     def syncer(_installed: Path, _env: object) -> dict[str, object]:
         sources, duplicates = bridge.installed_sources(
@@ -189,15 +201,18 @@ def successful_native(
             Path(env["CLAUDE_CONFIG_DIR"]) / "settings.json"
         )
         assert duplicates == [] and len(sources) == 1
+        source = bridge.native_complement(sources[0], runner.installed, env)
+        if not source.skills:
+            return {"status": "changed", "skipped": []}
         compatibility = bridge._compatibility_module()
         reports = {
             skill.folder: compatibility.make_report(
                 source_identity=sources[0].identity, skill_path=skill.relative_path,
                 source_digest=skill.source_digest, requirements=[], inference={"status": "not-needed"},
             )
-            for skill in sources[0].skills
+            for skill in source.skills
         }
-        files, _ = bridge.rendered_plugin(sources[0], {}, reports)
+        files, _ = bridge.rendered_plugin(source, {}, reports)
         generated = tmp_path / "data" / bridge.GENERATED_MARKETPLACE / "plugins" / "awesome"
         for relative, content in files.items():
             path = generated / relative
@@ -215,40 +230,69 @@ def successful_native(
                 "source": {"source": "local", "path": str(generated)},
             }
         )
-        cache_skill = (
-            codex_home
-            / "plugins"
-            / "cache"
-            / bridge.GENERATED_MARKETPLACE
-            / "awesome"
-            / generated_version
-            / "skills"
-            / "do-work"
-            / "SKILL.md"
-        )
-        cache_skill.parent.mkdir(parents=True, exist_ok=True)
-        cache_skill.write_text(files["skills/do-work/SKILL.md"], encoding="utf-8")
-        syncer.skill_path = cache_skill
+        cache_root = codex_home / "plugins" / "cache" / bridge.GENERATED_MARKETPLACE / "awesome" / generated_version
+        for skill in source.skills:
+            relative = f"skills/{skill.folder}/SKILL.md"
+            cache_skill = cache_root / relative
+            cache_skill.parent.mkdir(parents=True, exist_ok=True)
+            cache_skill.write_text(files[relative], encoding="utf-8")
+            syncer.skill_paths[skill.folder] = cache_skill
+        syncer.skill_path = syncer.skill_paths.get("do-work")
         return {"status": "changed", "skipped": []}
 
     syncer.skill_path = None
+    syncer.skill_paths = {}
 
     def discoverer(_executable: str, _env: object, _cwd: Path) -> list[dict[str, object]]:
-        assert syncer.skill_path is not None
         return [
             {
                 "name": "claude-plugins-kit:claude-plugins",
                 "pluginId": "claude-plugins-kit@codex-kit",
                 "path": str(installed_root / "skills" / "claude-plugins" / "SKILL.md"),
             },
+        ] + [
             {
-                "name": "awesome:do-work",
+                "name": f"awesome:{skill}",
                 "pluginId": f"awesome@{bridge.GENERATED_MARKETPLACE}",
-                "path": str(syncer.skill_path),
-            },
+                "path": str(path),
+            } for skill, path in syncer.skill_paths.items()
+        ] + [
+            {"name": f"awesome:{skill}", "pluginId": "awesome@native-market",
+             "path": str(native_root / "skills" / skill / "SKILL.md")}
+            for skill in (native_skills or ())
         ]
 
     return runner, syncer, discoverer
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_migration_verifies_native_overlap_and_keeps_only_missing_forwarders(bridge, tmp_path, partial):
+    env, legacy_files = legacy_fixture(tmp_path)
+    add_claude_source(env, tmp_path)
+    if partial:
+        path = tmp_path / "claude-cache" / "awesome" / "1.0.0" / "skills" / "new-skill" / "SKILL.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("---\nname: new-skill\ndescription: Newly installed.\n---\n")
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env, native_skills=("do-work",))
+    result = bridge.migrate(env=env, runner=runner, install=True, sync_launcher=syncer, discoverer=discoverer)
+    assert result["status"] == "changed", result
+    assert result["native"]["generated_skills"] == (["awesome:new-skill"] if partial else [])
+    assert result["native"]["native_skills"][0]["reserved_skills"] == ["do-work"]
+    assert result["native"]["retired_identities"] == []
+    assert not legacy_files[1].exists()
+
+
+def test_migration_preserves_legacy_stub_when_native_override_is_not_discoverable(bridge, tmp_path):
+    env, legacy_files = legacy_fixture(tmp_path)
+    add_claude_source(env, tmp_path)
+    before = {path: path.read_bytes() for path in legacy_files}
+    runner, syncer, discoverer = successful_native(bridge, tmp_path, env, native_skills=("do-work",))
+    def without_native(executable, environment, cwd):
+        return [item for item in discoverer(executable, environment, cwd) if item["pluginId"] != "awesome@native-market"]
+    result = bridge.migrate(env=env, runner=runner, install=True, sync_launcher=syncer, discoverer=without_native)
+    assert result["status"] == "error", result
+    assert result["phase"] == "verify"
+    assert all(path.read_bytes() == content for path, content in before.items())
 
 
 def test_install_failure_preserves_every_legacy_artifact_byte_for_byte(
