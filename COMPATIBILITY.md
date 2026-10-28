@@ -12,11 +12,9 @@ The [compatibility overrides](plugins/claude-plugins-kit/compatibility-overrides
 | `awesome-kit@plugins-kit` | `arewedone`, `debug-context`, `orchestrate`, `plugin-ecosystem`, `verbose-updates`: adapted to Codex context/tool names; historical `recap` and `task` mappings remain available |
 | `bootstrap@plugins-kit` | `bootstrap`, `plugin-dev`: adapted; preserve lifecycle/path contracts |
 | `claude-ui-kit@plugins-kit` | `statusline`: Claude-only; it configures Claude's status line and cannot provide the current Codex session's status |
-| `content-pipeline-kit@plugins-kit` | `content-pipeline-domain`: supported; `background-pipeline`, `workflow-pipeline`, `execute-work-unit`: Claude-only because contracts require Claude `--bg`, native Workflow, and strict worker Write/allowlists |
 | `git-kit@plugins-kit` | `git-code-review`: adapted; preserve review lane and GitHub CLI prerequisites |
 | `hue-kit@plugins-kit` | `hue-domain`: adapted; preserve Hue environment/CLI, translate prompts/opener |
 | `llm-kit@plugins-kit` | `content-pipeline-domain`: supported; `background-pipeline`, `workflow-pipeline`, `execute-work-unit`: Claude-only because contracts require Claude `--bg`, native Workflow, and strict worker Write/allowlists; `openrouter-account`: adapted; preserve credential precedence and prompt secrecy |
-| `llm-scripting-kit@plugins-kit` | `openrouter-account`: adapted; preserve credential precedence and prompt secrecy |
 | `presence-kit@plugins-kit` | `recap`: adapted; preserve text-first reporting and optional interview without inventing Claude prompt ids or state |
 | `secrets-kit@plugins-kit` | `secrets-kit`: adapted; invoke installed `bin/secrets-kit`, use a real terminal for tty passphrase verbs |
 | `skills-kit@plugins-kit` | `knowledge-encoding`, `md-domain`, `update-documentation`: adapted; `materialized-output`: supported |

@@ -163,22 +163,6 @@
     "status": "claude-only",
     "instructions": "Internal Claude rescue prompting contract; do not expose as a Codex user capability."
   },
-  "content-pipeline-kit@plugins-kit/background-pipeline": {
-    "status": "claude-only",
-    "instructions": "Requires Claude --bg sessions, dispatcher leases, and Claude status surfaces; direct the user to Claude."
-  },
-  "content-pipeline-kit@plugins-kit/content-pipeline-domain": {
-    "status": "supported",
-    "instructions": "Live backends require the provisioned llm_scripting_kit and bootstrap_lib shared imports; select codex-cli when appropriate."
-  },
-  "content-pipeline-kit@plugins-kit/execute-work-unit": {
-    "status": "claude-only",
-    "instructions": "Requires Claude background worker launch prompts and Write-tool allowlists; direct the user to Claude."
-  },
-  "content-pipeline-kit@plugins-kit/workflow-pipeline": {
-    "status": "claude-only",
-    "instructions": "Requires the native Workflow agent()/parallel() tool contract; direct the user to Claude."
-  },
   "core@spryfox-plugins/copy": {
     "status": "adapted",
     "instructions": "Requires Windows clipboard capability; use the source PowerShell/clip.exe procedure when that capability is available."
@@ -226,10 +210,6 @@
   "llm-kit@plugins-kit/workflow-pipeline": {
     "status": "claude-only",
     "instructions": "Requires the native Workflow agent()/parallel() tool contract; direct the user to Claude."
-  },
-  "llm-scripting-kit@plugins-kit/openrouter-account": {
-    "status": "adapted",
-    "instructions": "Adapt the ! prefix and hidden-prompt wording; preserve key precedence and the shared ~/.claude credential contract."
   },
   "p4-kit@plugins-kit/p4-code-review": {
     "status": "adapted",
